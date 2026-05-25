@@ -53,7 +53,7 @@ from dataclasses import dataclass
 
 from selectolax.lexbor import LexborHTMLParser, LexborNode
 
-from .._url_map import config_for, url_for
+from .._overrides import config_for
 from ..schema import Encyclical, Footnote, Paragraph
 from .heuristics import (
     extract_paragraph_number,
@@ -198,7 +198,7 @@ def _resolve_chain(
         return (strategy,)
     if strategies is not None:
         return tuple(strategies)
-    cfg = config_for(slug, allow_unknown=True)
+    cfg = config_for(slug)
     if cfg is not None and cfg.strategy is not None:
         return (get_strategy(cfg.strategy),)
     return DEFAULT_CHAIN
@@ -231,10 +231,39 @@ def _pick_attempt(attempts: list[ParseAttempt]) -> ParseAttempt:
 
 
 def _apply_overrides(encyclical: Encyclical, slug: str) -> Encyclical:
-    cfg = config_for(slug, allow_unknown=True)
+    cfg = config_for(slug)
     if cfg is None or not cfg.overrides:
         return encyclical
     return encyclical.model_copy(update=cfg.overrides)
+
+
+_CANONICAL_LINK_RE = _re.compile(
+    r'<link\b[^>]*rel="canonical"[^>]*href="([^"]+)"',
+    _re.IGNORECASE,
+)
+_CANONICAL_LINK_REV_RE = _re.compile(
+    r'<link\b[^>]*href="([^"]+)"[^>]*rel="canonical"',
+    _re.IGNORECASE,
+)
+_OG_URL_RE = _re.compile(
+    r'<meta\b[^>]*property="og:url"[^>]*content="([^"]+)"',
+    _re.IGNORECASE,
+)
+
+
+def _extract_source_url(html_source: str) -> str:
+    """Pull the document's canonical URL out of its own ``<head>``.
+
+    Vatican.va emits ``<link rel="canonical">`` and
+    ``<meta property="og:url">`` on every page; either is good enough.
+    Returns an empty string if neither is present (the validation pass
+    will surface that as a warning).
+    """
+    for pattern in (_CANONICAL_LINK_RE, _CANONICAL_LINK_REV_RE, _OG_URL_RE):
+        m = pattern.search(html_source)
+        if m is not None:
+            return m.group(1)
+    return ""
 
 
 # ---- the actual strategy execution -------------------------------------
@@ -281,7 +310,7 @@ def _execute(html_source: str, slug: str, source_url: str | None, strat: Strateg
         salutation=title_block.salutation,
         paragraphs=paragraphs,
         footnotes=footnotes,
-        source_url=source_url or url_for(slug),
+        source_url=source_url or _extract_source_url(html_source),
     )
 
 

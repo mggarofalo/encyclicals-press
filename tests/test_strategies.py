@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from encyclicals_press import _url_map
+from encyclicals_press import _overrides
 from encyclicals_press.parse import (
     DEFAULT_CHAIN,
     DEFAULT_STRATEGY,
@@ -104,34 +104,27 @@ def test_chain_falls_back_after_failure(html: str) -> None:
     assert attempts[1].encyclical.title == "Spe Salvi"
 
 
-def test_doc_config_overrides_patch_fields(html: str, monkeypatch) -> None:
-    monkeypatch.setitem(
-        _url_map.URL_MAP,
+def test_doc_config_overrides_patch_fields(html: str) -> None:
+    _overrides.clear()
+    _overrides.register(
         "spe-salvi",
-        _url_map.DocConfig(
-            url=_url_map.URL_MAP["spe-salvi"]
-            if isinstance(_url_map.URL_MAP["spe-salvi"], str)
-            else _url_map.URL_MAP["spe-salvi"].url,
-            overrides={"incipit": "Custom Override"},
-        ),
+        _overrides.DocConfig(overrides={"incipit": "Custom Override"}),
     )
-    enc = parse(html, slug="spe-salvi", emit_warnings=False)
-    assert enc.incipit == "Custom Override"
+    try:
+        enc = parse(html, slug="spe-salvi", emit_warnings=False)
+        assert enc.incipit == "Custom Override"
+    finally:
+        _overrides.clear()
 
 
-def test_doc_config_strategy_name_uses_specific_strategy(html: str, monkeypatch) -> None:
-    monkeypatch.setitem(
-        _url_map.URL_MAP,
-        "spe-salvi",
-        _url_map.DocConfig(
-            url=_url_map.URL_MAP["spe-salvi"]
-            if isinstance(_url_map.URL_MAP["spe-salvi"], str)
-            else _url_map.URL_MAP["spe-salvi"].url,
-            strategy="permissive",
-        ),
-    )
-    attempts = parse_with_attempts(html, slug="spe-salvi")
-    assert attempts[0].strategy_name == "permissive"
+def test_doc_config_strategy_name_uses_specific_strategy(html: str) -> None:
+    _overrides.clear()
+    _overrides.register("spe-salvi", _overrides.DocConfig(strategy="permissive"))
+    try:
+        attempts = parse_with_attempts(html, slug="spe-salvi")
+        assert attempts[0].strategy_name == "permissive"
+    finally:
+        _overrides.clear()
 
 
 def test_parse_attempt_dataclass_carries_warnings(html: str) -> None:

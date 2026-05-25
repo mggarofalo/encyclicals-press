@@ -54,18 +54,25 @@ def test_paragraph_one_spot_check(spe_salvi: Encyclical) -> None:
     # Section context is the opening 'Faith is Hope' (or whatever heading sits
     # immediately before paragraph 1 in source order).
     assert p1.section is not None
-    # The incipit appears at the start of paragraph 1, in italics.
-    assert "*SPE SALVI facti sumus*" in p1.text
-    # Paul's letter to the Romans is cited inline as a scripture link.
-    assert "Rom" in p1.text and "8:24" in p1.text
-    # And the paragraph number itself should already be stripped from the body.
+    # The body is non-trivial (the fixture is lorem-ipsum'd but every
+    # structural element the parser needs is preserved).
+    assert len(p1.text) > 50
+    # The paragraph number itself should already be stripped from the body.
     assert not p1.text.startswith("1.")
+    # The lorem fixtures keep one italic span and one footnote ref in
+    # paragraph 1 so the parser's inline-conversion paths stay exercised.
+    assert "*" in p1.text, "paragraph 1 should contain at least one italic span"
 
 
 def test_footnote_one_spot_check(spe_salvi: Encyclical) -> None:
+    """Footnote 1 is recovered as a non-empty body — content varies
+    because the fixtures are lorem-ipsum'd, but structure is preserved.
+    """
     f1 = next(f for f in spe_salvi.footnotes if f.number == 1)
-    assert "Corpus Inscriptionum Latinarum" in f1.text
-    assert "26003" in f1.text
+    assert f1.text
+    # The leading ``[1]`` marker is consumed by the parser; only the
+    # citation body remains.
+    assert not f1.text.startswith("[1]")
 
 
 def test_sections_detected(spe_salvi: Encyclical) -> None:

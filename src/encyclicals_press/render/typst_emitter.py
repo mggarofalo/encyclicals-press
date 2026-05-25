@@ -90,7 +90,26 @@ def emit_typst(parsed: ParsedCorpus) -> str:
 # ---- internals ----------------------------------------------------------
 
 
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)\s]+\)")
+_MD_FOOTNOTE_RE = re.compile(r"\[\^\d+\]")
+_MD_EMPHASIS_RE = re.compile(r"\*{1,2}([^*]+)\*{1,2}")
+
+
+def _strip_markdown(text: str) -> str:
+    """Reduce a fragment of corpus Markdown to plain text suitable for a
+    Typst smallcaps heading. Section names in the corpus can carry inline
+    links (e.g. ``"... from [Leo XIII](https://...)"``) and italic
+    emphasis — Typst would render the brackets and URL as literal
+    characters inside the heading, so collapse to the label form here.
+    """
+    text = _MD_LINK_RE.sub(r"\1", text)
+    text = _MD_FOOTNOTE_RE.sub("", text)
+    text = _MD_EMPHASIS_RE.sub(r"\1", text)
+    return text.strip()
+
+
 def _emit_section_heading(text: str) -> str:
+    text = _strip_markdown(text)
     roman_m = _ROMAN_PREFIX_RE.match(text)
     if roman_m is None:
         return f"#section-heading({_quote(text)})"

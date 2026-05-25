@@ -1,105 +1,118 @@
 # encyclicals-press
 
-A typesetting pipeline that fetches papal encyclicals from vatican.va, normalizes them into a Git-tracked Markdown corpus, and renders them as dignified PDF editions via Typst. The design language is U.S. Supreme Court slip opinion: Century Schoolbook body, no drop caps, marginal paragraph numbers, italic small-caps rubric blocks, restraint over ornament. *Standard Ebooks for encyclicals* — not another aggregator.
+> *Standard Ebooks, but for papal encyclicals.*
 
-## Why
+Vatican.va is where encyclicals live online. The PDFs the site offers are afterthoughts — dim photocopies of typewritten originals, the kind of thing you click *download* on, glance at, and never open again. The HTML is worse: structurally loose, visually inconsistent across pontificates, riddled with quirks left over from twenty years of CMS migrations.
 
-Vatican.va's HTML is structurally loose and visually inconsistent; the PDFs it offers are afterthoughts. Papal encyclicals are magisterial documents cited by paragraph (LS §49) — the typographic genre they share is not the devotional missal but the published opinion of a high court. This project treats them that way.
+This project picks up those texts, normalizes them into a Markdown corpus you'd actually want to edit by hand, and types them into PDFs you'd actually want to read or cite from. The design language is **U.S. Supreme Court slip opinion**, not devotional missal — Century-family body, no drop caps, paragraph numbers in the outer margin, italic small-caps rubric blocks. Restraint over ornament.
+
+If that sounds austere, that's the point. Encyclicals are magisterial documents cited by paragraph (LS §49). They share a typographic genre with the published opinions of high courts, and they deserve to be set that way.
 
 ## Quick start
 
-```bash
+```sh
 uv sync
-uv run encyclicals build spe-salvi    # produces output/spe-salvi.pdf
-uv run encyclicals build --all        # renders the whole corpus
+uv run encyclicals fetch https://www.vatican.va/content/.../some-encyclical.html
+uv run encyclicals ingest <slug>
+uv run encyclicals build <slug>
 ```
 
-Adding a new encyclical:
+That's the whole pipeline. The slug is derived from the URL filename. A PDF lands in `output/`. URLs for the documents the parser has been tested against live in [`docs/ENCYCLICALS.md`](docs/ENCYCLICALS.md).
 
-```bash
-uv run encyclicals fetch <slug>       # cache the vatican.va HTML
-uv run encyclicals ingest <slug>      # parse -> corpus/<pope>/<slug>.md
-uv run encyclicals build <slug>       # corpus markdown -> PDF
-```
-
-The slug is the project's stable identifier (e.g. `spe-salvi`, `caritas-in-veritate`). Register new slugs in `src/encyclicals_press/_url_map.py`.
-
-## Pipeline
+## What's in the box
 
 ```
 vatican.va HTML
-      │  fetch.py        (httpx, 1 req/sec, polite)
+      │  fetch.py        polite httpx (1 req/sec, real UA, robots.txt)
       ▼
 tests/fixtures/<slug>.html
-      │  parse/          (pluggable heuristics + validation + self-healing)
+      │  parse/          pluggable heuristics + validation + self-healing
       ▼
-Encyclical (pydantic model — paragraphs, footnotes, metadata)
-      │  normalize.py    (smart quotes, dashes, NBSP cleanup)
-      │  md_writer.py    (YAML frontmatter + fenced-div Markdown)
+Encyclical (Pydantic)
+      │  normalize.py    smart quotes, dashes, NBSP cleanup
+      │  md_writer.py    YAML frontmatter + fenced-div Markdown
       ▼
-corpus/<pope>/<slug>.md   ← the project's actual product, hand-editable
-      │  render.py       (custom md→Typst, no Pandoc dep)
+corpus/<pope>/<slug>.md   ← hand-editable; the project's real artifact
+      │  render/         corpus markdown → Typst source → PDF
       ▼
 output/<slug>.pdf
 ```
 
-The corpus directory is the long-lived artifact. Re-running `fetch` and `ingest` is idempotent against the source HTML, but `ingest` refuses to overwrite an existing corpus file without `--force` — once you've hand-corrected something in the Markdown, it stays.
+The corpus directory is the long-lived artifact. Re-running `fetch` and `ingest` is idempotent against the source HTML, but `ingest` won't overwrite an existing corpus file without `--force` — once you've hand-corrected something in the Markdown, it stays.
 
 ## Typography
 
-* **Trim:** 6"×9", U.S. Reports proportions.
-* **Body:** TeX Gyre Schola 11pt on 14pt leading, justified, old-style figures.
-* **Marginalia:** Inter 7pt for paragraph numbers in the outer margin; Inter 8pt small caps for running headers.
-* **Section openings:** first 3–5 words in real small caps, no drop cap, no ornament.
-* **Chapter dividers:** centered Roman numeral with the section title beneath in small caps.
-* **Footnotes:** hung, at page foot, 9pt, with rule above.
-* **Title page:** sober and centered — display title, "ENCYCLICAL LETTER" rubric, pope's name in small caps, Latin incipit at the foot, year in Roman numerals.
-* **Salutation:** italic small caps as a rubric preamble before the numbered body, directly parallel to SCOTUS's "JUSTICE X delivered the opinion of the Court."
+* **6"×9" trim**, U.S. Reports proportions. Mirrored margins (inside 0.75", outside 1.0").
+* **TeX Gyre Schola 11pt on 14pt leading**, justified, old-style figures. Vendored under `templates/fonts/` so CI builds are reproducible.
+* **Inter** sparingly, on folios and rubric labels.
+* **Marginal paragraph numbers** in the outer margin (right on recto, left on verso) — the SCOTUS-citation flourish you'd recognize from a *U.S. Reports* volume.
+* **Section openings** in small caps for the first three to five words. No drop caps.
+* **Roman-numeral chapter dividers** centered, with the chapter title in small caps beneath.
+* **Hung footnotes** at page foot with a 30% rule above.
+* **Title pages** sober and centered. Display title in smallcaps, `ENCYCLICAL LETTER` rubric, italic Latin incipit, year in Roman numerals.
 
-Fonts are vendored under `templates/fonts/` so CI builds are reproducible.
+If you reach for a flourish, stop. The visual register is *Reports of the Supreme Court of the United States*, not a parish missal.
 
-## Parser flexibility
+## Why lorem-ipsum?
 
-Vatican.va's HTML drifts across pontificates. The parser is designed for it: every decision point — where the title lives, what counts as a heading, how to find footnote definitions, where the dateline sits — is a named, single-responsibility function on a `Strategy` bundle. The default strategy handles every document the project currently ships; novel layouts hit a permissive fallback before the parser gives up.
+The committed fixtures and corpus markdown carry **lorem ipsum**, not the real encyclical translations. Vatican translations are © Libreria Editrice Vaticana; we'd rather not bake them into a public repository. The fixtures preserve every structural element the parser depends on — paragraph numbers, footnote anchors, section headings, title-block metadata, the dateline — so the parser, validation, and tests still exercise the real shape. Only the prose is replaced.
 
-Three knobs, in increasing power:
+When you `fetch` a real URL, your working tree fills in with the actual translation. The PDFs render with real text. The repository stays clean.
 
-* **Override one field on a strategy.** `DEFAULT_STRATEGY.replace(find_title=my_finder)` swaps the title-paragraph locator without touching anything else.
-* **Register a named strategy** and point a document at it from the URL_MAP:
-  ```python
-  URL_MAP["my-doc"] = DocConfig(url="...", strategy="my-strategy")
-  ```
-* **Field-level overrides** for individual documents (no code change):
-  ```python
-  URL_MAP["weird-doc"] = DocConfig(
-      url="...",
-      overrides={"incipit": "Magnifica humanitas"},
-  )
-  ```
+See [COPYRIGHT.md](COPYRIGHT.md) for the lawyerly version.
 
-After parsing, a validation pass checks for missing fields, paragraph-number gaps, and footnote ref/def mismatches. Errors trigger fallback to the next strategy; warnings surface to the user without blocking the ingest.
+## A new encyclical
 
-## Contributing a new encyclical
+```sh
+uv run encyclicals fetch <vatican.va URL>
+```
 
-1. Find the canonical English-language vatican.va URL for the document.
-2. Add it to `URL_MAP` in `src/encyclicals_press/_url_map.py` (plain URL string, or `DocConfig(...)` for a strategy/overrides).
-3. `uv run encyclicals fetch <slug>` — caches the HTML to `tests/fixtures/`.
-4. `uv run encyclicals ingest <slug>` — produces `corpus/<pope>/<slug>.md`. Validation warnings, if any, print to stderr.
-5. If the parser stumbles, either:
-   * write a custom strategy (see `parse/strategies.py`) and register it,
-   * patch the offending field via `DocConfig.overrides`, or
-   * hand-edit the corpus Markdown — `ingest` won't overwrite without `--force`.
-6. `uv run encyclicals build <slug>` and inspect the PDF.
-7. PR with the new corpus file, the cached fixture, and any heuristic tweaks.
+The slug comes from the URL filename. The HTML is cached under `tests/fixtures/`. The parser's `<link rel="canonical">` extraction recovers `source_url` so nothing else needs to be told.
 
-## Status
+```sh
+uv run encyclicals ingest <slug>
+```
 
-The repository currently ships eight encyclicals across three pontificates, all parsing cleanly without per-document overrides:
+This walks the parser's strategy chain, runs the validation pass, and writes `corpus/<pope>/<slug>.md`. Warnings (paragraph-number gaps, footnote ref/def mismatches, missing fields) print to stderr; they're informational and don't fail the ingest.
 
-* **Benedict XVI:** *Deus Caritas Est* (2005), *Spe Salvi* (2007), *Caritas in Veritate* (2009)
-* **Francis:** *Lumen Fidei* (2013), *Laudato Si'* (2015), *Fratelli Tutti* (2020), *Dilexit Nos* (2024)
-* **Leo XIV:** *Magnifica Humanitas* (2026)
+```sh
+uv run encyclicals build <slug>
+```
 
-PDFs build via `uv run encyclicals build --all`; CI uploads them as artifacts.
+This emits a `.typ` source file alongside the PDF for debugging. `--all` walks every corpus document.
 
-See [COPYRIGHT.md](COPYRIGHT.md) for licensing.
+If the parser stumbles on something unusual, you have three options, in increasing order of effort:
+
+1. **Hand-edit the corpus Markdown.** It's plain text. `ingest` won't overwrite without `--force`.
+2. **Register a `DocConfig` override** in `src/encyclicals_press/_overrides.py` with `overrides={"field": value}`. Applied after parsing, before validation.
+3. **Write a custom `Strategy`** — see `src/encyclicals_press/parse/strategies.py`. Swap any single heuristic (`find_title`, `is_heading`, `chapter_preamble_numeral`, ...) without reimplementing the whole parser.
+
+## Project shape
+
+```
+src/encyclicals_press/
+├── fetch.py          httpx client + slug derivation
+├── parse/            HTML → Encyclical (strategies + validation + self-healing)
+├── schema.py         Pydantic models
+├── normalize.py      typographic cleanup
+├── md_writer.py      Encyclical → corpus Markdown
+├── render/           corpus Markdown → Typst → PDF
+├── cli.py            click entry point
+└── _overrides.py     optional per-slug DocConfig registry
+
+templates/
+├── default.typ       page layout, headers, body styles
+├── lib/              title-page, colophon, typography helpers
+└── fonts/            TeX Gyre Schola + Inter (vendored)
+
+corpus/<pope>/        the long-lived hand-editable artifact
+tests/fixtures/       committed snapshot of vatican.va HTML (lorem-ipsum'd)
+docs/ENCYCLICALS.md   URLs the parser has been tested against
+scripts/              dev tools (lorem_fixtures.py, build-all.sh)
+```
+
+The parser's flexibility is the part to read first if you're curious about how this is supposed to scale: every decision lives in a single-responsibility function on a `Strategy` bundle, and the default strategy chain self-heals via a permissive fallback when the default's heuristics would discard real content.
+
+## License
+
+Code, templates, tooling: MIT. Encyclical text: © Libreria Editrice Vaticana — not committed here. [COPYRIGHT.md](COPYRIGHT.md) has the full posture.

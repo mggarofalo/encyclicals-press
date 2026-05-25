@@ -36,10 +36,20 @@ def main() -> None:
 
 
 @main.command()
-@click.argument("slug")
-def fetch(slug: str) -> None:
-    """Fetch <slug> from vatican.va into tests/fixtures/<slug>.html."""
-    path = fetch_encyclical(slug)
+@click.argument("url")
+@click.option(
+    "--slug",
+    "slug_override",
+    default=None,
+    help="Override the slug; otherwise derived from the URL filename.",
+)
+def fetch(url: str, slug_override: str | None) -> None:
+    """Fetch URL from vatican.va into tests/fixtures/<slug>.html.
+
+    The slug is derived from the URL filename (the project-style identifier
+    inside vatican.va's longer filenames). Pass --slug to override.
+    """
+    path = fetch_encyclical(url, slug=slug_override)
     click.echo(f"wrote {path}")
 
 
