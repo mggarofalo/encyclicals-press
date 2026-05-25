@@ -20,6 +20,12 @@ class Paragraph(BaseModel):
     paragraphs that share a number with the preceding one, and for prose that
     sits outside the numbered body (the closing dateline and signature)."""
 
+    chapter: str | None = None
+    """The most recent Roman-numeral chapter divider above this paragraph,
+    as ``"I. Inheritance"`` / ``"II. The Mystery"`` etc. The renderer
+    promotes this to a ``#chapter-divider`` block. ``None`` for documents
+    without explicit chapter dividers."""
+
     section: str | None
     """The most recent heading-like paragraph above this one in document order.
     Carried, not nested — the corpus is too lightly structured to justify a tree."""

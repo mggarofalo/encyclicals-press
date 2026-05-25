@@ -76,12 +76,12 @@ def test_footnote_one_spot_check(spe_salvi: Encyclical) -> None:
 
 
 def test_sections_detected(spe_salvi: Encyclical) -> None:
-    sections = {p.section for p in spe_salvi.paragraphs if p.section}
+    chapters = {p.chapter for p in spe_salvi.paragraphs if p.chapter}
     # The signature SCOTUS-style chapter dividers — Roman numerals in the
-    # closing third of the encyclical — must survive parsing as sections.
-    assert "I. Prayer as a school of hope" in sections
-    assert "II. Action and suffering as settings for learning hope" in sections
-    assert "III. Judgement as a setting for learning and practising hope" in sections
+    # closing third of the encyclical — must survive parsing as chapters.
+    assert "I. Prayer as a school of hope" in chapters
+    assert "II. Action and suffering as settings for learning hope" in chapters
+    assert "III. Judgement as a setting for learning and practising hope" in chapters
 
 
 def test_closing_dateline_present(spe_salvi: Encyclical) -> None:

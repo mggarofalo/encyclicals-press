@@ -56,12 +56,12 @@ from selectolax.lexbor import LexborHTMLParser, LexborNode
 from .._overrides import config_for
 from ..schema import Encyclical, Footnote, Paragraph
 from .heuristics import (
+    clean_heading_text,
     extract_paragraph_number,
     is_empty,
     node_to_markdown,
     parse_dateline_date,
     split_on_breaks,
-    strip_inline_markup,
     title_case,
 )
 from .strategies import (
@@ -237,6 +237,12 @@ def _apply_overrides(encyclical: Encyclical, slug: str) -> Encyclical:
     return encyclical.model_copy(update=cfg.overrides)
 
 
+# Pre-modern encyclicals sometimes emit chapter dividers inline as a
+# single ``I. INHERITANCE`` heading rather than a ``CHAPTER ONE`` preamble
+# with a separate title. Match those headings here so they don't get
+# overwritten by the subsection-number heading that follows.
+_ROMAN_HEADING_RE = _re.compile(r"^([IVXLCDM]+)\.\s+(.+)$")
+
 _CANONICAL_LINK_RE = _re.compile(
     r'<link\b[^>]*rel="canonical"[^>]*href="([^"]+)"',
     _re.IGNORECASE,
@@ -327,6 +333,7 @@ def _parse_body(  # noqa: PLR0912, PLR0915
     emits these as ``#chapter-divider`` blocks.
     """
     paragraphs: list[Paragraph] = []
+    current_chapter: str | None = None
     current_section: str | None = None
     pending_chapter: str | None = None
     pending_chapter_titles: list[str] = []
@@ -356,21 +363,45 @@ def _parse_body(  # noqa: PLR0912, PLR0915
         if number is not None:
             chapter_section = flush_chapter()
             if chapter_section is not None:
-                current_section = chapter_section
-            paragraphs.append(Paragraph(number=number, section=current_section, text=body_text))
+                current_chapter = chapter_section
+                current_section = None
+            paragraphs.append(
+                Paragraph(
+                    number=number,
+                    chapter=current_chapter,
+                    section=current_section,
+                    text=body_text,
+                )
+            )
             pending_paragraph_number = None
             continue
         if strat.is_heading(p):
-            heading_text = strip_inline_markup(md)
+            heading_text = clean_heading_text(md)
             chapter_numeral = strat.chapter_preamble_numeral(heading_text)
             if chapter_numeral is not None:
                 chapter_section = flush_chapter()
                 if chapter_section is not None:
-                    current_section = chapter_section
+                    current_chapter = chapter_section
+                    current_section = None
                 pending_chapter = chapter_numeral
                 continue
             if pending_chapter is not None:
                 pending_chapter_titles.append(title_case(heading_text).rstrip("."))
+                continue
+            roman_heading = _ROMAN_HEADING_RE.match(heading_text)
+            if roman_heading is not None:
+                # Direct ``I. INHERITANCE`` / ``I. Prayer as a school of hope``
+                # chapter heading (JP2-era + Benedict-era), as opposed to a
+                # ``CHAPTER ONE`` preamble + separate title pair. The chapter
+                # title casing comes verbatim from the source — the renderer
+                # normalises to small caps at display time.
+                chapter_section = flush_chapter()
+                if chapter_section is not None:
+                    current_chapter = chapter_section
+                numeral = roman_heading.group(1)
+                title_text = roman_heading.group(2).strip().rstrip(".")
+                current_chapter = f"{numeral}. {title_text}" if title_text else f"{numeral}."
+                current_section = None
                 continue
             heading_number, heading_remainder = extract_paragraph_number(heading_text)
             if heading_number is not None:
@@ -386,9 +417,15 @@ def _parse_body(  # noqa: PLR0912, PLR0915
             continue
         chapter_section = flush_chapter()
         if chapter_section is not None:
-            current_section = chapter_section
+            current_chapter = chapter_section
+            current_section = None
         paragraphs.append(
-            Paragraph(number=pending_paragraph_number, section=current_section, text=md)
+            Paragraph(
+                number=pending_paragraph_number,
+                chapter=current_chapter,
+                section=current_section,
+                text=md,
+            )
         )
         pending_paragraph_number = None
 

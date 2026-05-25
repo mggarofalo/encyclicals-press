@@ -5,17 +5,20 @@ templates, applies the ``edition`` show rule with the document's
 metadata, and then walks the body blocks in order. Helper template
 functions (``paragraph-num``, ``chapter-divider``, …) are imported from
 ``templates/lib/typography.typ`` so they're in scope for the body.
+
+The emitter is a pure layout layer: every semantic decision (which
+heading is a chapter divider, what counts as a signature, where the
+paragraph number lives) is already resolved in the parser and encoded
+as a typed corpus block. The walk here is a straight dispatch on
+``block.kind``.
 """
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, date, datetime
 
 from .corpus_reader import ParsedCorpus
 from .markdown import inline_to_typst, inline_to_typst_markup, wrap_section_opening
-
-_ROMAN_PREFIX_RE = re.compile(r"^([IVXLCDM]+)\.\s+(.+)$")
 
 
 def emit_typst(parsed: ParsedCorpus) -> str:
@@ -51,7 +54,14 @@ def emit_typst(parsed: ParsedCorpus) -> str:
             continue
 
         if block.kind == "section":
-            lines.append(_emit_section_heading(block.text))
+            lines.append(f"#section-heading({_quote(block.text)})")
+            lines.append("")
+            first_para_in_section = True
+            continue
+
+        if block.kind == "chapter-divider":
+            numeral = (block.numeral or "") + "."
+            lines.append(f"#chapter-divider({_quote(numeral)}, {_quote(block.text)})")
             lines.append("")
             first_para_in_section = True
             continue
@@ -77,10 +87,7 @@ def emit_typst(parsed: ParsedCorpus) -> str:
             continue
 
         if block.kind == "signature":
-            # Signature is rendered as letterspaced caps; strip markdown
-            # bold so it doesn't compete with the template styling.
-            clean = re.sub(r"\*\*([^*]+)\*\*", r"\1", block.text)
-            lines.append(f"#signature({inline_to_typst(clean, parsed.footnotes)})")
+            lines.append(f"#signature({inline_to_typst(block.text, parsed.footnotes)})")
             lines.append("")
             continue
 
@@ -88,33 +95,6 @@ def emit_typst(parsed: ParsedCorpus) -> str:
 
 
 # ---- internals ----------------------------------------------------------
-
-
-_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)\s]+\)")
-_MD_FOOTNOTE_RE = re.compile(r"\[\^\d+\]")
-_MD_EMPHASIS_RE = re.compile(r"\*{1,2}([^*]+)\*{1,2}")
-
-
-def _strip_markdown(text: str) -> str:
-    """Reduce a fragment of corpus Markdown to plain text suitable for a
-    Typst smallcaps heading. Section names in the corpus can carry inline
-    links (e.g. ``"... from [Leo XIII](https://...)"``) and italic
-    emphasis — Typst would render the brackets and URL as literal
-    characters inside the heading, so collapse to the label form here.
-    """
-    text = _MD_LINK_RE.sub(r"\1", text)
-    text = _MD_FOOTNOTE_RE.sub("", text)
-    text = _MD_EMPHASIS_RE.sub(r"\1", text)
-    return text.strip()
-
-
-def _emit_section_heading(text: str) -> str:
-    text = _strip_markdown(text)
-    roman_m = _ROMAN_PREFIX_RE.match(text)
-    if roman_m is None:
-        return f"#section-heading({_quote(text)})"
-    numeral, title = roman_m.group(1), roman_m.group(2)
-    return f"#chapter-divider({_quote(numeral + '.')}, {_quote(title)})"
 
 
 def _quote(value: str) -> str:

@@ -21,7 +21,8 @@ from pathlib import Path
 import yaml
 
 _FENCE_OPEN_RE = re.compile(
-    r"^:::\s*\{\.(salutation|dateline|signature|paragraph)(?:\s+n=(\d+))?\}\s*$"
+    r"^:::\s*\{\.(salutation|dateline|signature|paragraph|chapter-divider)"
+    r"(?:\s+n=(\d+))?(?:\s+numeral=([IVXLCDM]+))?\}\s*$"
 )
 _FENCE_CLOSE_RE = re.compile(r"^:::\s*$")
 _HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
@@ -32,16 +33,18 @@ _FOOTNOTE_DEF_RE = re.compile(r"^\[\^(\d+)\]:\s*(.*)$")
 class Block:
     """One block of corpus content. ``kind`` is one of:
 
-    ``"salutation"`` | ``"section"`` | ``"paragraph"`` |
-    ``"continuation"`` | ``"dateline"`` | ``"signature"``.
+    ``"salutation"`` | ``"section"`` | ``"chapter-divider"`` |
+    ``"paragraph"`` | ``"continuation"`` | ``"dateline"`` | ``"signature"``.
 
     ``number`` is the encyclical paragraph number (only set for
-    ``"paragraph"`` blocks).
+    ``"paragraph"`` blocks). ``numeral`` carries the Roman numeral
+    (``"I"``, ``"II"``, …) of a chapter divider; ``None`` everywhere else.
     """
 
     kind: str
     text: str = ""
     number: int | None = None
+    numeral: str | None = None
 
 
 @dataclass
@@ -114,6 +117,7 @@ def _parse_blocks(body: str) -> list[Block]:  # noqa: PLR0912
     blocks: list[Block] = []
     current_fence: str | None = None
     current_number: int | None = None
+    current_numeral: str | None = None
     fence_buf: list[str] = []
     plain_buf: list[str] = []
 
@@ -124,15 +128,18 @@ def _parse_blocks(body: str) -> list[Block]:  # noqa: PLR0912
         plain_buf.clear()
 
     def flush_fence() -> None:
-        nonlocal current_fence, current_number
+        nonlocal current_fence, current_number, current_numeral
         text = " ".join(fence_buf).strip()
         if current_fence == "paragraph":
             blocks.append(Block(kind="paragraph", text=text, number=current_number))
+        elif current_fence == "chapter-divider":
+            blocks.append(Block(kind="chapter-divider", text=text, numeral=current_numeral))
         elif current_fence is not None:
             blocks.append(Block(kind=current_fence, text=text))
         fence_buf.clear()
         current_fence = None
         current_number = None
+        current_numeral = None
 
     for line in body.splitlines():
         stripped = line.rstrip()
@@ -148,6 +155,7 @@ def _parse_blocks(body: str) -> list[Block]:  # noqa: PLR0912
             flush_plain()
             current_fence = open_m.group(1)
             current_number = int(open_m.group(2)) if open_m.group(2) else None
+            current_numeral = open_m.group(3)
             continue
 
         heading_m = _HEADING_RE.match(stripped)

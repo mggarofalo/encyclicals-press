@@ -4,6 +4,9 @@ Output convention (Pandoc-flavored Markdown):
 
 * YAML frontmatter carrying every metadata field.
 * Section headings as ``## Heading``.
+* Roman-numeral chapter dividers as ``::: {.chapter-divider numeral=I}``
+  fenced divs — distinct from regular section headings so the renderer
+  doesn't need to classify by regex.
 * Numbered paragraphs as fenced divs::
 
       ::: {.paragraph n=49}
@@ -21,11 +24,19 @@ Keep the format readable.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
 
 from .schema import Encyclical, Paragraph
+
+# A chapter divider section is a Roman-numeral preamble plus title text,
+# produced by the parser's ``flush_chapter`` path. The md_writer promotes
+# these to typed fence blocks so the renderer doesn't have to rediscover
+# the structure via regex.
+_CHAPTER_SECTION_RE = re.compile(r"^([IVXLCDM]+)\.\s*(.*)$")
+_BOLD_MARKER_RE = re.compile(r"\*\*([^*]+)\*\*")
 
 
 def write_markdown(enc: Encyclical, out_path: Path) -> None:
@@ -68,13 +79,34 @@ def _render_salutation(enc: Encyclical) -> str:
 
 def _render_body(enc: Encyclical) -> str:
     chunks: list[str] = []
+    current_chapter: str | None = None
     current_section: str | None = None
     for p in enc.paragraphs:
+        if p.chapter != current_chapter and p.chapter is not None:
+            chunks.append(_render_chapter_divider(p.chapter))
+            current_chapter = p.chapter
+            current_section = None  # any prior section was inside the old chapter
         if p.section != current_section and p.section is not None:
             chunks.append(f"## {p.section}\n\n")
             current_section = p.section
         chunks.append(_render_paragraph(p))
     return "".join(chunks)
+
+
+def _render_chapter_divider(chapter: str) -> str:
+    """Emit a ``::: {.chapter-divider numeral=I}`` fence.
+
+    ``chapter`` arrives in the canonical ``"I. Title"`` form the parser
+    emits. A malformed value (no Roman prefix) falls back to a section
+    heading so we never silently swallow content.
+    """
+    m = _CHAPTER_SECTION_RE.match(chapter)
+    if m is None:
+        return f"## {chapter}\n\n"
+    numeral, title = m.group(1), m.group(2).strip()
+    if not title:
+        return f"::: {{.chapter-divider numeral={numeral}}}\n:::\n\n"
+    return f"::: {{.chapter-divider numeral={numeral}}}\n{title}\n:::\n\n"
 
 
 def _render_paragraph(p: Paragraph) -> str:
@@ -86,7 +118,11 @@ def _render_paragraph(p: Paragraph) -> str:
         if text.startswith("*Given in") or text.startswith("*Given at"):
             return f"::: {{.dateline}}\n{text}\n:::\n\n"
         if _looks_like_signature(text):
-            return f"::: {{.signature}}\n{text}\n:::\n\n"
+            # The renderer styles signatures as letterspaced caps; drop any
+            # bold markers carried over from the source ``<b>`` so the
+            # signature block isn't doubly emphasised.
+            clean = _BOLD_MARKER_RE.sub(r"\1", text)
+            return f"::: {{.signature}}\n{clean}\n:::\n\n"
         # Continuation paragraph; emit as plain Markdown.
         return f"{text}\n\n"
     return f"::: {{.paragraph n={p.number}}}\n{text}\n:::\n\n"

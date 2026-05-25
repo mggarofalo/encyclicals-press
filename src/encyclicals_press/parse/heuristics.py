@@ -233,6 +233,24 @@ def strip_inline_markup(s: str) -> str:
     return re.sub(r"\*+", "", s).strip()
 
 
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)\s]+\)")
+_MD_FOOTNOTE_RE = re.compile(r"\[\^\d+\]")
+
+
+def clean_heading_text(s: str) -> str:
+    """Reduce a heading run to plain text.
+
+    Section and chapter titles shouldn't carry footnote markers, scripture
+    links, or emphasis — the renderer would otherwise have to strip them.
+    Resolve once, at the parser boundary: drop ``[label](url)`` to ``label``,
+    drop ``[^N]`` outright, drop ``**bold**`` / ``*italic*`` markers.
+    """
+    s = _MD_LINK_RE.sub(r"\1", s)
+    s = _MD_FOOTNOTE_RE.sub("", s)
+    s = re.sub(r"\*+", "", s)
+    return s.strip()
+
+
 def extract_paragraph_number(text: str) -> tuple[int | None, str]:
     """If *text* starts with ``"N. "``, return ``(N, rest)``; else ``(None, text)``."""
     m = PARAGRAPH_NUMBER_RE.match(text)
