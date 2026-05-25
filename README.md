@@ -2,11 +2,11 @@
 
 > *Standard Ebooks, but for papal encyclicals.*
 
-Vatican.va is where encyclicals live online. The PDFs the site offers are afterthoughts — dim photocopies of typewritten originals, the kind of thing you click *download* on, glance at, and never open again. The HTML is worse: structurally loose, visually inconsistent across pontificates, riddled with quirks left over from twenty years of CMS migrations.
+Vatican.va publishes encyclicals as HTML — the canonical online source, and the format this project ingests.
 
-This project picks up those texts, normalizes them into a Markdown corpus you'd actually want to edit by hand, and types them into PDFs you'd actually want to read or cite from. The design language is **U.S. Supreme Court slip opinion**, not devotional missal — Century-family body, no drop caps, paragraph numbers in the outer margin, italic small-caps rubric blocks. Restraint over ornament.
+This project converts that HTML into a Markdown corpus suited to hand editing, then typesets the result as PDF. The design language is **U.S. Supreme Court slip opinion** — Century-family body, no drop caps, paragraph numbers in the outer margin, italic small-caps rubric blocks. Restraint over ornament.
 
-If that sounds austere, that's the point. Encyclicals are magisterial documents cited by paragraph (LS §49). They share a typographic genre with the published opinions of high courts, and they deserve to be set that way.
+Encyclicals are magisterial documents cited by paragraph (e.g., *Laudato si'* §49). They share a typographic genre with the published opinions of high courts, and this project sets them in that register.
 
 ## Quick start
 
@@ -51,7 +51,7 @@ The corpus directory is the long-lived artifact. Re-running `fetch` and `ingest`
 * **Hung footnotes** at page foot with a 30% rule above.
 * **Title pages** sober and centered. Display title in smallcaps, `ENCYCLICAL LETTER` rubric, italic Latin incipit, year in Roman numerals.
 
-If you reach for a flourish, stop. The visual register is *Reports of the Supreme Court of the United States*, not a parish missal.
+The visual register throughout is *Reports of the Supreme Court of the United States*: hierarchy, restraint, and citability over ornament.
 
 ## Why lorem-ipsum?
 
@@ -59,7 +59,7 @@ The committed fixtures and corpus markdown carry **lorem ipsum**, not the real e
 
 When you `fetch` a real URL, your working tree fills in with the actual translation. The PDFs render with real text. The repository stays clean.
 
-See [COPYRIGHT.md](COPYRIGHT.md) for the lawyerly version.
+See [COPYRIGHT.md](COPYRIGHT.md) for the full statement.
 
 ## A new encyclical
 
