@@ -301,21 +301,40 @@ def _inline_to_typst_markup(md: str, footnotes: dict[int, str]) -> str:
         if m.group("fnref"):
             n = int(m.group("fnnum"))
             body = footnotes.get(n, f"[footnote {n} missing from corpus]")
-            pieces.append(f"#footnote[{_inline_to_typst_markup(body, footnotes)}]")
+            fn_call = f"#footnote[{_inline_to_typst_markup(body, footnotes)}]"
+            pieces.append(_terminated(fn_call, md, m.end()))
         elif m.group("bold"):
             inner = m.group("boldtxt")
-            pieces.append(f"*{_escape_typst(inner)}*")
+            pieces.append(_terminated(f"#strong[{_escape_typst(inner)}]", md, m.end()))
         elif m.group("italic"):
             inner = m.group("italictxt")
-            pieces.append(f"_{_escape_typst(inner)}_")
+            pieces.append(_terminated(f"#emph[{_escape_typst(inner)}]", md, m.end()))
         elif m.group("link"):
             label = m.group("linktext")
             url = m.group("linkurl")
-            pieces.append(f'#link("{url}")[{_inline_to_typst_markup(label, footnotes)}]')
+            pieces.append(
+                _terminated(
+                    f'#link("{url}")[{_inline_to_typst_markup(label, footnotes)}]', md, m.end()
+                )
+            )
         pos = m.end()
     if pos < len(md):
         pieces.append(_escape_typst(md[pos:]))
     return "".join(pieces)
+
+
+def _terminated(call: str, md: str, end: int) -> str:
+    """Emit *call* followed by a zero-width space if the next markdown char
+    would otherwise be parsed as additional function-call arguments.
+
+    In Typst markup, ``#emph[X](Y)`` is read as ``#emph`` with two positional
+    arguments — the content ``[X]`` and the parenthesised expression
+    ``(Y)``. A ZWSP between the ``]`` and ``(`` breaks the call sequence
+    without inserting a visible space.
+    """
+    if end < len(md) and md[end] in "([":
+        return call + "\u200b"
+    return call
 
 
 def _inline_to_typst(md: str, footnotes: dict[int, str]) -> str:

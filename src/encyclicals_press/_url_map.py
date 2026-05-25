@@ -12,6 +12,10 @@ URL_MAP: dict[str, str] = {
         "https://www.vatican.va/content/benedict-xvi/en/encyclicals/documents/"
         "hf_ben-xvi_enc_20071130_spe-salvi.html"
     ),
+    "magnifica-humanitas": (
+        "https://www.vatican.va/content/leo-xiv/en/encyclicals/documents/"
+        "20260515-magnifica-humanitas.html"
+    ),
 }
 
 

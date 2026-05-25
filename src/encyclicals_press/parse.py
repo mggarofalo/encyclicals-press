@@ -67,15 +67,28 @@ def parse(html_source: str, slug: str, source_url: str | None = None) -> Encycli
     if container is None:
         raise ValueError("body container 'div.vaticanrichtext' not found in HTML")
 
-    body_ps, footnote_ps = _split_on_hr(container)
+    title_p = _find_title_paragraph(tree, container)
+    if title_p is None:
+        raise ValueError("title paragraph not found in HTML")
+    title_block = _parse_title_block(title_p)
 
+    body_ps, footnote_ps = _split_on_hr(container)
     if not body_ps:
         raise ValueError("no <p> elements found in body container")
+    # If the title came from the body container's first paragraph (older layout
+    # like Spe Salvi), drop it. Otherwise the title lives in a separate div
+    # and the whole body container is available for parsing.
+    if title_p is body_ps[0]:
+        body_ps = body_ps[1:]
+    body_ps = _drop_table_of_contents(body_ps)
 
-    title_block = _parse_title_block(body_ps[0])
+    paragraphs, closing, promulgated = _parse_body(body_ps)
 
-    paragraphs, closing, promulgated = _parse_body(body_ps[1:])
-
+    # The post-<hr/> footnote definitions may be wrapped in extra <div>s on
+    # newer vatican.va pages, so fall back to a CSS query when the inline
+    # split came up empty.
+    if not footnote_ps:
+        footnote_ps = tree.css("p.MsoFootnoteText")
     footnotes = _parse_footnotes(footnote_ps)
 
     incipit = _extract_incipit(paragraphs)
@@ -110,6 +123,49 @@ def _find_body_container(tree: LexborHTMLParser) -> LexborNode | None:
     return max(candidates, key=lambda node: len(node.css("p")))
 
 
+def _find_title_paragraph(tree: LexborHTMLParser, body: LexborNode) -> LexborNode | None:
+    """Locate the centered title-rubric paragraph.
+
+    Older documents (e.g. *Spe Salvi*) put the title block in the first
+    paragraph of the body container. Newer ones (e.g. *Magnifica Humanitas*)
+    put it in a separate ``div.vaticanrichtext.abstract`` ahead of the body.
+    Detect by looking for "ENCYCLICAL LETTER" in the rendered text — that
+    rubric label appears on every encyclical's title page and nowhere else.
+    """
+    for candidate in tree.css("div.vaticanrichtext p"):
+        plain = candidate.text(deep=True, strip=True).upper()
+        if "ENCYCLICAL LETTER" in plain and len(plain) < 400:  # noqa: PLR2004
+            return candidate
+    # Last resort: first non-empty paragraph in the body container.
+    for p in body.iter(include_text=False):
+        if p.tag == "p" and not _is_empty(p):
+            return p
+    return None
+
+
+def _drop_table_of_contents(body_ps: list[LexborNode]) -> list[LexborNode]:
+    """Trim leading TOC paragraphs from documents that include one.
+
+    Recent encyclicals (Leo XIV onward) prepend a table of contents to the
+    body container: alternating chapter labels and concatenated subsection
+    listings, ending in a blank paragraph. The real body always begins with
+    a section heading (e.g. ``INTRODUCTION``) immediately followed by a
+    numbered paragraph (``1. ...``). Find that pivot.
+    """
+    for i, p in enumerate(body_ps):
+        if _is_empty(p):
+            continue
+        text = p.text(deep=True, strip=True)
+        if PARAGRAPH_NUMBER_RE.match(text):
+            # Keep the heading immediately above, if any, plus everything after.
+            for j in range(i - 1, -1, -1):
+                if _is_empty(body_ps[j]):
+                    continue
+                return body_ps[j:]
+            return body_ps[i:]
+    return body_ps
+
+
 def _split_on_hr(container: LexborNode) -> tuple[list[LexborNode], list[LexborNode]]:
     """Walk direct children, splitting <p> elements into body and footnotes at the <hr />."""
     body: list[LexborNode] = []
@@ -126,14 +182,14 @@ def _split_on_hr(container: LexborNode) -> tuple[list[LexborNode], list[LexborNo
 
 
 def _parse_title_block(p: LexborNode) -> _TitleBlock:
-    """Extract title, subtitle, pope, salutation from the opening centered <p>."""
+    """Extract title, subtitle, pope, salutation from the centered title <p>."""
     lines = _split_on_breaks(p)
     lines = [line for line in (raw.strip(" \xa0") for raw in lines) if line]
 
     title = ""
     subtitle: str | None = None
     pope = ""
-    salutation_lines: list[str] = []
+    trailing: list[str] = []
 
     for line in lines:
         text = _strip_inline_markup(line)
@@ -146,22 +202,30 @@ def _parse_title_block(p: LexborNode) -> _TitleBlock:
             title = _title_case(text)
             continue
         if not pope:
-            pope = _title_case(text)
+            # Strip the optional "POPE " prefix newer documents prepend.
+            cleaned = re.sub(r"(?i)^pope\s+", "", text)
+            pope = _title_case(cleaned)
             continue
-        # Subtitle is conventionally the last line ("ON CHRISTIAN HOPE", etc.).
-        # Salutation lines are everything between pope and subtitle.
-        salutation_lines.append(text)
+        trailing.append(text)
 
-    if salutation_lines:
-        subtitle = _title_case(salutation_lines.pop())
-        salutation = ", ".join(_title_case(s) for s in salutation_lines)
+    if not trailing:
+        return _TitleBlock(title=title, subtitle=None, pope=pope, salutation="")
+
+    # Distinguish a salutation block ("To the Bishops, Priests...") from a
+    # multi-line subtitle ("On Safeguarding the Human Person / In the
+    # Time of Artificial Intelligence"). Salutations always open with "To".
+    has_salutation = any(line.upper().startswith("TO ") for line in trailing)
+    if has_salutation:
+        subtitle = _title_case(trailing.pop())
+        salutation = ", ".join(_title_case(s) for s in trailing)
     else:
+        subtitle = _title_case(" ".join(trailing))
         salutation = ""
 
     return _TitleBlock(title=title, subtitle=subtitle, pope=pope, salutation=salutation)
 
 
-def _parse_body(
+def _parse_body(  # noqa: PLR0912, PLR0915
     body_ps: list[LexborNode],
 ) -> tuple[list[Paragraph], list[str], date]:
     """Parse numbered body and detect the closing dateline + signature.
@@ -173,8 +237,20 @@ def _parse_body(
 
     paragraphs: list[Paragraph] = []
     current_section: str | None = None
+    pending_chapter: str | None = None
+    pending_chapter_titles: list[str] = []
     closing: list[str] = []
     promulgated: date | None = None
+
+    def flush_chapter() -> str | None:
+        nonlocal pending_chapter, pending_chapter_titles
+        if pending_chapter is None:
+            return None
+        title = " ".join(pending_chapter_titles).strip()
+        combined = f"{pending_chapter}. {title}" if title else pending_chapter + "."
+        pending_chapter = None
+        pending_chapter_titles = []
+        return combined
 
     dateline_idx = _find_dateline(body_ps)
     body_range = body_ps[:dateline_idx] if dateline_idx is not None else body_ps
@@ -187,12 +263,34 @@ def _parse_body(
             continue
         number, body_text = _extract_paragraph_number(md)
         if number is not None:
+            chapter_section = flush_chapter()
+            if chapter_section is not None:
+                current_section = chapter_section
             paragraphs.append(Paragraph(number=number, section=current_section, text=body_text))
             continue
         if _is_heading(p):
-            current_section = _strip_inline_markup(md)
+            heading_text = _strip_inline_markup(md)
+            chapter_numeral = _chapter_preamble_numeral(heading_text)
+            if chapter_numeral is not None:
+                # If a previous CHAPTER had no body paragraphs yet (shouldn't
+                # happen in practice), flush it to current_section so it's
+                # not silently dropped.
+                chapter_section = flush_chapter()
+                if chapter_section is not None:
+                    current_section = chapter_section
+                pending_chapter = chapter_numeral
+                continue
+            if pending_chapter is not None:
+                # Multi-line chapter title (e.g. ``CHAPTER THREE`` /
+                # ``TECHNOLOGY AND DOMINANCE.`` / ``THE GRANDEUR OF HUMANITY``).
+                pending_chapter_titles.append(_title_case(heading_text).rstrip("."))
+            else:
+                current_section = heading_text
             continue
         # Continuation prose with no number.
+        chapter_section = flush_chapter()
+        if chapter_section is not None:
+            current_section = chapter_section
         paragraphs.append(Paragraph(number=None, section=current_section, text=md))
 
     if dateline_idx is not None:
@@ -200,12 +298,15 @@ def _parse_body(
         dateline_md = _node_to_markdown(dateline_p).strip()
         promulgated = _parse_dateline_date(dateline_md)
         closing.append(dateline_md)
-        if dateline_idx + 1 < len(body_ps):
-            sig_p = body_ps[dateline_idx + 1]
-            if not _is_empty(sig_p):
-                sig_md = _node_to_markdown(sig_p).strip()
-                if sig_md and _looks_like_signature(sig_md):
-                    closing.append(sig_md)
+        # Skip blank paragraphs vatican.va sometimes inserts between dateline
+        # and signature (Magnifica Humanitas has one).
+        for sig_p in body_ps[dateline_idx + 1 :]:
+            if _is_empty(sig_p):
+                continue
+            sig_md = _node_to_markdown(sig_p).strip()
+            if sig_md and _looks_like_signature(sig_md):
+                closing.append(sig_md)
+            break
 
     if promulgated is None:
         raise ValueError("could not extract promulgation date from body")
@@ -476,3 +577,38 @@ _ROMAN_RE = re.compile(r"^[IVXLCDM]+\.?$", re.IGNORECASE)
 
 def _is_roman_numeral(word: str) -> bool:
     return bool(_ROMAN_RE.match(word)) and word.upper() == word
+
+
+_CHAPTER_WORDS = {
+    "ONE": "I",
+    "TWO": "II",
+    "THREE": "III",
+    "FOUR": "IV",
+    "FIVE": "V",
+    "SIX": "VI",
+    "SEVEN": "VII",
+    "EIGHT": "VIII",
+    "NINE": "IX",
+    "TEN": "X",
+}
+
+
+def _chapter_preamble_numeral(text: str) -> str | None:
+    """Return the Roman-numeral form if *text* is a chapter preamble.
+
+    Recognises ``CHAPTER ONE``, ``CHAPTER 1``, ``CHAPTER I``, and ``PART ONE``
+    style preambles that newer vatican.va documents emit as a separate
+    paragraph just above the actual chapter title.
+    """
+    stripped = text.strip().rstrip(".:")
+    upper = stripped.upper()
+    for prefix in ("CHAPTER ", "PART "):
+        if upper.startswith(prefix):
+            rest = upper[len(prefix) :].strip()
+            if rest in _CHAPTER_WORDS:
+                return _CHAPTER_WORDS[rest]
+            if _ROMAN_RE.match(rest):
+                return rest.rstrip(".")
+            if rest.isdigit():
+                return rest
+    return None
