@@ -50,10 +50,37 @@ class DocConfig:
 
 
 URL_MAP: dict[str, str | DocConfig] = {
+    # Benedict XVI (2005-2013) — 3 encyclicals
+    "deus-caritas-est": (
+        "https://www.vatican.va/content/benedict-xvi/en/encyclicals/documents/"
+        "hf_ben-xvi_enc_20051225_deus-caritas-est.html"
+    ),
     "spe-salvi": (
         "https://www.vatican.va/content/benedict-xvi/en/encyclicals/documents/"
         "hf_ben-xvi_enc_20071130_spe-salvi.html"
     ),
+    "caritas-in-veritate": (
+        "https://www.vatican.va/content/benedict-xvi/en/encyclicals/documents/"
+        "hf_ben-xvi_enc_20090629_caritas-in-veritate.html"
+    ),
+    # Francis (2013-2025) — 4 encyclicals
+    "lumen-fidei": (
+        "https://www.vatican.va/content/francesco/en/encyclicals/documents/"
+        "papa-francesco_20130629_enciclica-lumen-fidei.html"
+    ),
+    "laudato-si": (
+        "https://www.vatican.va/content/francesco/en/encyclicals/documents/"
+        "papa-francesco_20150524_enciclica-laudato-si.html"
+    ),
+    "fratelli-tutti": (
+        "https://www.vatican.va/content/francesco/en/encyclicals/documents/"
+        "papa-francesco_20201003_enciclica-fratelli-tutti.html"
+    ),
+    "dilexit-nos": (
+        "https://www.vatican.va/content/francesco/en/encyclicals/documents/"
+        "20241024-enciclica-dilexit-nos.html"
+    ),
+    # Leo XIV (2025– )
     "magnifica-humanitas": (
         "https://www.vatican.va/content/leo-xiv/en/encyclicals/documents/"
         "20260515-magnifica-humanitas.html"

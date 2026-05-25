@@ -4,7 +4,7 @@ title: Magnifica Humanitas
 subtitle: On Safeguarding the Human Person in the Time of Artificial Intelligence
 pope: Leo XIV
 promulgated: '2026-05-15'
-incipit: ''
+incipit: Magnifica Humanitas
 salutation: ''
 source_url: https://www.vatican.va/content/leo-xiv/en/encyclicals/documents/20260515-magnifica-humanitas.html
 ---

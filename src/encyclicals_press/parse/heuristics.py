@@ -27,9 +27,19 @@ from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 # ---- regexes shared across heuristics ----------------------------------
 
-PARAGRAPH_NUMBER_RE = re.compile(r"^\s*(\d{1,4})\.\s+")
-FOOTNOTE_BODY_HREF_RE = re.compile(r"^_ftn(\d+)$")
-FOOTNOTE_DEF_HREF_RE = re.compile(r"^_ftnref(\d+)$")
+# A numbered paragraph begins ``"N. Text..."`` — but vatican.va inconsistently
+# drops the space between the period and the first word (Dilexit Nos has
+# ``"131.Later"`` and ``"135.In"`` mid-document). Allow zero-or-more space
+# but require the next character to look like the start of prose (a letter,
+# or an opening quote/bracket) so plain numerics like ``"1.5 metres"`` don't
+# accidentally match.
+PARAGRAPH_NUMBER_RE = re.compile(r"^\s*(\d{1,4})\.\s*(?=[A-Za-z“”\"‘’'(\[*])")
+# Body footnote refs and definition back-links can use either a bare
+# fragment (``#_ftn1`` / ``#_ftnref1``) or an absolute URL whose fragment
+# is the same (``/content/.../doc.html#_ftn1``). ``search`` rather than
+# ``match`` so either form qualifies.
+FOOTNOTE_BODY_HREF_RE = re.compile(r"#?_ftn(\d+)$")
+FOOTNOTE_DEF_HREF_RE = re.compile(r"#?_ftnref(\d+)$")
 ROMAN_RE = re.compile(r"^[IVXLCDM]+\.?$", re.IGNORECASE)
 
 DATE_RE = re.compile(
@@ -122,9 +132,14 @@ def _emit_inline(node: LexborNode, out: list[str]) -> None:  # noqa: PLR0912
             _emit_inline(child, inner)
             _emit_wrapped(inner, "**", out)
         elif child.tag == "a":
-            href = (child.attributes.get("href") or "").lstrip("#")
-            body_ref = FOOTNOTE_BODY_HREF_RE.match(href)
-            def_ref = FOOTNOTE_DEF_HREF_RE.match(href)
+            href = child.attributes.get("href") or ""
+            body_ref = FOOTNOTE_BODY_HREF_RE.search(href)
+            # FOOTNOTE_BODY_HREF_RE matches both ``_ftn1`` and ``_ftnref1``
+            # because both end in digits — distinguish by checking the
+            # presence of ``ref`` in the matched substring.
+            def_ref = FOOTNOTE_DEF_HREF_RE.search(href)
+            if def_ref is not None:
+                body_ref = None
             if body_ref is not None:
                 out.append(f"[^{body_ref.group(1)}]")
                 continue
@@ -213,19 +228,37 @@ _SMALL_WORDS = {
 
 
 def title_case(text: str) -> str:
-    """Title-case while preserving Roman numerals and small connecting words."""
+    """Title-case while preserving Roman numerals and small connecting words.
+
+    The "capitalize" step finds the first alphabetic character in the word
+    so that punctuation prefixes like an opening curly quote in
+    ``"LAUDATO`` don't leave the actual ``l`` un-capitalized.
+    """
     words = text.split()
     out: list[str] = []
     for i, word in enumerate(words):
         if _is_roman_numeral(word):
             out.append(word.upper())
             continue
-        lowered = word.lower()
-        if 0 < i < len(words) - 1 and lowered in _SMALL_WORDS:
-            out.append(lowered)
+        # Strip the alphabetic-only-comparison form to test small-words
+        # membership.
+        alpha = "".join(c for c in word if c.isalpha())
+        lowered_alpha = alpha.lower()
+        if 0 < i < len(words) - 1 and lowered_alpha in _SMALL_WORDS:
+            out.append(word.lower())
             continue
-        out.append(lowered[:1].upper() + lowered[1:])
+        out.append(_capitalize_first_letter(word.lower()))
     return " ".join(out)
+
+
+def _capitalize_first_letter(word: str) -> str:
+    """Uppercase the first alphabetic character of *word*, leaving leading
+    punctuation (``"laudato`` → ``"Laudato``) untouched.
+    """
+    for i, c in enumerate(word):
+        if c.isalpha():
+            return word[:i] + c.upper() + word[i + 1 :]
+    return word
 
 
 def _is_roman_numeral(word: str) -> bool:
@@ -296,7 +329,15 @@ def parse_title_lines(lines: list[str]) -> TitleBlock:
         upper = text.upper()
         if upper == "ENCYCLICAL LETTER":
             continue
-        if upper.startswith("OF THE SUPREME PONTIFF") or upper.startswith("OF HIS HOLINESS"):
+        # The "by-whom" rubric line varies by pontificate: Benedict and Leo
+        # use "OF HIS HOLINESS" or "OF THE SUPREME PONTIFF"; Francis uses
+        # "OF THE HOLY FATHER". Match any of them so the pope's name lands
+        # in the right slot.
+        if (
+            upper.startswith("OF THE SUPREME PONTIFF")
+            or upper.startswith("OF HIS HOLINESS")
+            or upper.startswith("OF THE HOLY FATHER")
+        ):
             continue
         if not title:
             title = title_case(text)
@@ -321,31 +362,55 @@ def parse_title_lines(lines: list[str]) -> TitleBlock:
     return TitleBlock(title=title, subtitle=subtitle, pope=pope, salutation=salutation)
 
 
+_FOOTNOTE_DEF_ANCHOR_NAME_RE = re.compile(r"^_ftn\d+$")
+
+
+def _is_footnote_def_paragraph(p: LexborNode) -> bool:
+    """A paragraph is a footnote definition if it contains an anchor with
+    ``name="_ftn{N}"`` (the back-link target) — the marker that uniquely
+    identifies definitions across every vatican.va layout we've seen.
+
+    Body paragraphs cite footnotes via ``name="_ftnref{N}"`` (note the
+    ``ref``), so that pattern does not match here.
+    """
+    for anchor in p.css("a"):
+        name = anchor.attributes.get("name") or ""
+        if _FOOTNOTE_DEF_ANCHOR_NAME_RE.match(name):
+            return True
+    return False
+
+
 def split_body_and_footnotes(
     tree: LexborHTMLParser, container: LexborNode
 ) -> tuple[list[LexborNode], list[LexborNode]]:
     """**Strategy.split_body_and_footnotes** — separate the encyclical body
     from its footnote definitions.
 
-    Older documents place the footnotes immediately after an ``<hr />`` as
-    direct children of the body container. Newer ones nest each footnote
-    in its own ``<div>`` after the rule, in which case they don't appear
-    as direct ``<p>`` children at all. Fall back to a CSS query against
-    ``p.MsoFootnoteText`` (a class vatican.va consistently uses) when the
-    inline split comes up empty.
+    Identifies footnote definitions by the ``<a name="_ftnN">`` back-link
+    anchor each one carries. This works regardless of how the page wraps
+    them: as direct children of the body container with an ``<hr/>``
+    above (Spe Salvi), nested in ``<div id="ftnN">`` siblings (Laudato
+    Si'), or sitting in a ``p.MsoFootnoteText`` after an ``<hr/>``
+    buried inside a ``<font>`` (Magnifica Humanitas, Lumen Fidei).
+
+    Walks every ``<p>`` descendant of the container in document order.
+    The first paragraph that matches the def signature ends the body
+    section and starts the footnote section.
     """
     body: list[LexborNode] = []
     footnotes: list[LexborNode] = []
-    in_footnotes = False
-    for child in container.iter(include_text=False):
-        if child.tag == "hr":
-            in_footnotes = True
-            continue
-        if child.tag != "p":
-            continue
-        (footnotes if in_footnotes else body).append(child)
+    for p in container.css("p"):
+        if _is_footnote_def_paragraph(p):
+            footnotes.append(p)
+        elif not footnotes:
+            body.append(p)
+        # If we've already entered the footnote section but encounter a
+        # non-def paragraph (e.g. a blank separator), skip it.
+    # If the container didn't carry the footnotes at all, fall back to the
+    # whole document — some pages park them in a sibling div with the
+    # class ``MsoFootnoteText``.
     if not footnotes:
-        footnotes = list(tree.css("p.MsoFootnoteText"))
+        footnotes = [p for p in tree.css("p.MsoFootnoteText") if _is_footnote_def_paragraph(p)]
     return body, footnotes
 
 
