@@ -1,15 +1,14 @@
 """Polite client for fetching encyclical HTML from vatican.va.
 
-Single-document fetch. Caches the response body to ``tests/fixtures/<slug>.html``
-so downstream stages develop against a committed snapshot rather than re-hitting
-the Vatican every iteration.
+Single-document fetch. Caches the response body to ``input/<slug>.html``,
+which is gitignored — the project never commits real translations (©
+Libreria Editrice Vaticana). Downstream stages read the source URL back
+from the page's ``<link rel="canonical">`` tag, so no slug→URL mapping
+needs to be committed.
 
 The project does not maintain a code-level table of supported URLs.
-``encyclicals fetch <url>`` takes the URL directly, derives the slug
-from the URL filename via :func:`derive_slug`, and caches the HTML.
-Downstream stages (``ingest``, ``parse``, ``render``) read the source
-URL back from the page's ``<link rel="canonical">`` tag, so no
-slug→URL mapping needs to be committed.
+``encyclicals fetch <url>`` takes the URL directly and derives the slug
+from the URL filename via :func:`derive_slug`.
 """
 
 from __future__ import annotations
@@ -34,7 +33,23 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def input_path(slug: str) -> Path:
+    """Local cache path for fetched HTML — ``input/<slug>.html``.
+
+    Gitignored so real vatican.va translations don't land in the repo.
+    Downstream stages (``ingest``) look here first before falling back to
+    the committed lorem snapshots under ``tests/fixtures/``.
+    """
+    return _project_root() / "input" / f"{slug}.html"
+
+
 def fixture_path(slug: str) -> Path:
+    """Committed-snapshot path — ``tests/fixtures/<slug>.html``.
+
+    These are the lorem-ipsum'd HTML fixtures that travel with the repo;
+    used by tests and as the lorem-demo fallback for ``ingest`` when no
+    local ``input/<slug>.html`` is present.
+    """
     return _project_root() / "tests" / "fixtures" / f"{slug}.html"
 
 
@@ -93,7 +108,7 @@ def _throttle() -> None:
 
 
 def fetch_encyclical(url: str, slug: str | None = None) -> Path:
-    """Fetch *url* and write the HTML to ``tests/fixtures/<slug>.html``.
+    """Fetch *url* and write the HTML to ``input/<slug>.html``.
 
     If *slug* is omitted, it is derived from the URL via :func:`derive_slug`.
     Returns the path to the written file. Raises ``httpx.HTTPStatusError`` on
@@ -117,7 +132,7 @@ def fetch_encyclical(url: str, slug: str | None = None) -> Path:
         response = client.get(url)
         response.raise_for_status()
 
-    out = fixture_path(slug)
+    out = input_path(slug)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(response.content)
     return out

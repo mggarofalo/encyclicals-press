@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .fetch import fetch_encyclical, fixture_path
+from .fetch import fetch_encyclical, fixture_path, input_path
 from .md_writer import write_markdown
 from .normalize import normalize
 from .parse import parse_with_attempts
@@ -46,10 +46,12 @@ def main() -> None:
     help="Override the slug; otherwise derived from the URL filename.",
 )
 def fetch(url: str, slug_override: str | None) -> None:
-    """Fetch URL from vatican.va into tests/fixtures/<slug>.html.
+    """Fetch URL from vatican.va into input/<slug>.html.
 
     The slug is derived from the URL filename (the project-style identifier
-    inside vatican.va's longer filenames). Pass --slug to override.
+    inside vatican.va's longer filenames). Pass --slug to override. The
+    input/ directory is gitignored so real vatican.va translations stay
+    out of the repo.
     """
     path = fetch_encyclical(url, slug=slug_override)
     click.echo(f"wrote {path}")
@@ -74,13 +76,21 @@ def _report_warnings(warnings: list[ParseWarning], strategy_name: str) -> None:
 @click.argument("slug")
 @click.option("--force", is_flag=True, help="Overwrite an existing corpus file.")
 def ingest(slug: str, force: bool) -> None:
-    """Parse the cached HTML for <slug> into the Markdown corpus."""
-    fixture = fixture_path(slug)
-    if not fixture.exists():
+    """Parse the cached HTML for <slug> into the Markdown corpus.
+
+    Looks for ``input/<slug>.html`` first (the local fetch destination);
+    falls back to ``tests/fixtures/<slug>.html`` (the committed lorem
+    snapshot) so the demo workflow works without re-fetching.
+    """
+    source = input_path(slug)
+    if not source.exists():
+        source = fixture_path(slug)
+    if not source.exists():
         raise click.ClickException(
-            f"fixture {fixture} not found; run `encyclicals fetch {slug}` first"
+            f"no HTML found for {slug!r} at {input_path(slug)} or {fixture_path(slug)}; "
+            f"run `encyclicals fetch <url>` first"
         )
-    attempts = parse_with_attempts(fixture.read_text(encoding="utf-8"), slug=slug)
+    attempts = parse_with_attempts(source.read_text(encoding="utf-8"), slug=slug)
     winning = next(
         (
             a

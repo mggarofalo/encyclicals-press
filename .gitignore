@@ -219,6 +219,12 @@ __marimo__/
 
 # encyclicals-press
 output/
+# Real vatican.va HTML lands here via `encyclicals fetch`. Gitignored
+# because the translations are © Libreria Editrice Vaticana.
+input/
+# `encyclicals ingest` writes parsed markdown here. Treated as a build
+# artifact — derived from input/ and editable locally, but not committed.
+corpus/
 # Re-include the Typst template helpers — the Python virtualenv "lib/"
 # rule above is overly broad and would otherwise hide templates/lib/.
 !templates/lib/

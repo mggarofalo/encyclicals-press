@@ -25,20 +25,20 @@ That's the whole pipeline. The slug is derived from the URL filename. A PDF land
 vatican.va HTML
       │  fetch.py        polite httpx (1 req/sec, real UA, robots.txt)
       ▼
-tests/fixtures/<slug>.html
+input/<slug>.html         (gitignored — real text stays out of the repo)
       │  parse/          pluggable heuristics + validation + self-healing
       ▼
 Encyclical (Pydantic)
       │  normalize.py    smart quotes, dashes, NBSP cleanup
       │  md_writer.py    YAML frontmatter + fenced-div Markdown
       ▼
-corpus/<pope>/<slug>.md   ← hand-editable; the project's real artifact
+corpus/<pope>/<slug>.md   (gitignored — hand-editable build artifact)
       │  render/         corpus markdown → Typst source → PDF
       ▼
 output/<slug>.pdf
 ```
 
-The corpus directory is the long-lived artifact. Re-running `fetch` and `ingest` is idempotent against the source HTML, but `ingest` won't overwrite an existing corpus file without `--force` — once you've hand-corrected something in the Markdown, it stays.
+Only `tests/fixtures/<slug>.html` (the lorem-ipsum'd snapshots used by the test suite) is committed. `input/`, `corpus/`, and `output/` are all gitignored — they hold derived or copyrighted material. `ingest` reads `input/<slug>.html` first and falls back to `tests/fixtures/` so the lorem demo flow still works on a fresh clone. `ingest` won't overwrite an existing corpus file without `--force` — hand-corrections in the Markdown survive re-runs.
 
 ## Typography
 
@@ -55,9 +55,9 @@ The visual register throughout is *Reports of the Supreme Court of the United St
 
 ## Why lorem-ipsum?
 
-The committed fixtures and corpus markdown carry **lorem ipsum**, not the real encyclical translations. Vatican translations are © Libreria Editrice Vaticana; we'd rather not bake them into a public repository. The fixtures preserve every structural element the parser depends on — paragraph numbers, footnote anchors, section headings, title-block metadata, the dateline — so the parser, validation, and tests still exercise the real shape. Only the prose is replaced.
+The committed fixtures carry **lorem ipsum**, not the real encyclical translations. Vatican translations are © Libreria Editrice Vaticana; we'd rather not bake them into a public repository. The fixtures preserve every structural element the parser depends on — paragraph numbers, footnote anchors, section headings, title-block metadata, the dateline — so the parser, validation, and tests still exercise the real shape. Only the prose is replaced.
 
-When you `fetch` a real URL, your working tree fills in with the actual translation. The PDFs render with real text. The repository stays clean.
+When you `fetch` a real URL, the HTML lands in the gitignored `input/` directory, `ingest` writes a real-text markdown file to the gitignored `corpus/` directory, and PDFs render with real text. The repository stays clean — none of the workflow mutates tracked files.
 
 See [COPYRIGHT.md](COPYRIGHT.md) for the full statement.
 
@@ -67,7 +67,7 @@ See [COPYRIGHT.md](COPYRIGHT.md) for the full statement.
 uv run encyclicals fetch <vatican.va URL>
 ```
 
-The slug comes from the URL filename. The HTML is cached under `tests/fixtures/`. The parser's `<link rel="canonical">` extraction recovers `source_url` so nothing else needs to be told.
+The slug comes from the URL filename. The HTML is cached under `input/<slug>.html` (gitignored). The parser's `<link rel="canonical">` extraction recovers `source_url` so nothing else needs to be told.
 
 ```sh
 uv run encyclicals ingest <slug>
@@ -105,10 +105,12 @@ templates/
 ├── lib/              title-page, colophon, typography helpers
 └── fonts/            TeX Gyre Schola + Inter (vendored)
 
-corpus/<pope>/        the long-lived hand-editable artifact
+input/                fetched vatican.va HTML — gitignored
+corpus/<pope>/        ingested markdown — gitignored, hand-editable
+output/               built PDFs and .typ source — gitignored
 tests/fixtures/       committed snapshot of vatican.va HTML (lorem-ipsum'd)
 docs/ENCYCLICALS.md   URLs the parser has been tested against
-scripts/              dev tools (lorem_fixtures.py, build-all.sh)
+scripts/              dev tools (lorem_fixtures.py, batch_fetch.py, build-all.sh)
 ```
 
 The parser's flexibility is the part to read first if you're curious about how this is supposed to scale: every decision lives in a single-responsibility function on a `Strategy` bundle, and the default strategy chain self-heals via a permissive fallback when the default's heuristics would discard real content.

@@ -70,7 +70,7 @@ uv run encyclicals ingest <slug>
 uv run encyclicals build <slug>
 ```
 
-The `fetch` step caches the HTML under `tests/fixtures/<slug>.html`. The `ingest` step parses it and writes `corpus/<pope>/<slug>.md`. The `build` step renders the corpus markdown to a PDF in `output/`.
+The `fetch` step caches the HTML under `input/<slug>.html` (gitignored). The `ingest` step parses it and writes `corpus/<pope>/<slug>.md` (also gitignored — both directories are local working state, never committed). The `build` step renders the corpus markdown to a PDF in `output/`.
 
 If the parser misreads a field you can either:
 
