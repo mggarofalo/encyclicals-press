@@ -1,0 +1,43 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check src/ tests/
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Render all encyclicals
+        run: uv run encyclicals build --all
+
+      - name: Upload PDFs
+        uses: actions/upload-artifact@v4
+        with:
+          name: encyclicals-pdf
+          path: output/*.pdf
+          if-no-files-found: error
