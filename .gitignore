@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# encyclicals-press
+output/
+# Re-include the Typst template helpers — the Python virtualenv "lib/"
+# rule above is overly broad and would otherwise hide templates/lib/.
+!templates/lib/
+!templates/lib/**
+
