@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # Bridge until the actions/* and astral-sh/setup-uv references all
+  # publish Node-24 builds. Node-20 is removed from runners 2026-09-16.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
