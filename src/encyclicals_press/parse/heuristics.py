@@ -29,11 +29,14 @@ from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 # A numbered paragraph begins ``"N. Text..."`` — but vatican.va inconsistently
 # drops the space between the period and the first word (Dilexit Nos has
-# ``"131.Later"`` and ``"135.In"`` mid-document). Allow zero-or-more space
-# but require the next character to look like the start of prose (a letter,
-# or an opening quote/bracket) so plain numerics like ``"1.5 metres"`` don't
-# accidentally match.
-PARAGRAPH_NUMBER_RE = re.compile(r"^\s*(\d{1,4})\.\s*(?=[A-Za-z“”\"‘’'(\[*])")
+# ``"131.Later"`` and ``"135.In"`` mid-document), and Paul VI's pages wrap
+# the marker in ``<b>`` so the markdown form is ``"**2.** Text..."``. Allow
+# an optional asterisk wrapper, then a digit, then a period; require the
+# next non-marker character to look like the start of prose so plain
+# numerics like ``"1.5 metres"`` don't accidentally match.
+PARAGRAPH_NUMBER_RE = re.compile(
+    r"^\s*\*{0,2}\s*(\d{1,4})\.\*{0,2}\s*(?=[A-Za-z“”\"‘’'(\[*])"
+)
 # Body footnote refs and definition back-links can use either a bare
 # fragment (``#_ftn1`` / ``#_ftnref1``) or an absolute URL whose fragment
 # is the same (``/content/.../doc.html#_ftn1``). ``search`` rather than

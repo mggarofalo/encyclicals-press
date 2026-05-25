@@ -46,8 +46,8 @@
       if page-num <= 2 { return }
       let recto = calc.odd(page-num)
       let title-text = text(
-        size: 8pt, font: sans-font, tracking: 0.15em, fill: muted,
-      )[#smallcaps(lower(title))]
+        size: 8pt, font: sans-font, tracking: 0.18em, fill: muted,
+      )[#upper(title)]
       let page-display = text(size: 8pt, font: sans-font, fill: muted)[#page-num]
       if recto {
         grid(columns: (1fr, auto), title-text, h(0.3em) + page-display)
