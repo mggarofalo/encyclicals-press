@@ -330,6 +330,7 @@ def _parse_body(  # noqa: PLR0912, PLR0915
     current_section: str | None = None
     pending_chapter: str | None = None
     pending_chapter_titles: list[str] = []
+    pending_paragraph_number: int | None = None
     closing: list[str] = []
 
     def flush_chapter() -> str | None:
@@ -357,6 +358,7 @@ def _parse_body(  # noqa: PLR0912, PLR0915
             if chapter_section is not None:
                 current_section = chapter_section
             paragraphs.append(Paragraph(number=number, section=current_section, text=body_text))
+            pending_paragraph_number = None
             continue
         if strat.is_heading(p):
             heading_text = strip_inline_markup(md)
@@ -369,13 +371,26 @@ def _parse_body(  # noqa: PLR0912, PLR0915
                 continue
             if pending_chapter is not None:
                 pending_chapter_titles.append(title_case(heading_text).rstrip("."))
+                continue
+            heading_number, heading_remainder = extract_paragraph_number(heading_text)
+            if heading_number is not None:
+                # Pre-modern JP2 layout: each paragraph is introduced by a
+                # bolded "N. Subsection title" heading, and the prose that
+                # follows is unnumbered. Treat the heading as both the
+                # paragraph number for the next prose block and the section
+                # name.
+                pending_paragraph_number = heading_number
+                current_section = heading_remainder if heading_remainder else None
             else:
                 current_section = heading_text
             continue
         chapter_section = flush_chapter()
         if chapter_section is not None:
             current_section = chapter_section
-        paragraphs.append(Paragraph(number=None, section=current_section, text=md))
+        paragraphs.append(
+            Paragraph(number=pending_paragraph_number, section=current_section, text=md)
+        )
+        pending_paragraph_number = None
 
     promulgated = None
     if dateline_idx is not None:

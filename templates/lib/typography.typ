@@ -65,11 +65,11 @@
 
 // Section heading. Centered small caps, no rules.
 #let section-heading(title) = {
-  v(1.2em, weak: true)
+  v(1.4em, weak: true)
   align(center)[
     #text(size: body-size, tracking: 0.05em)[#smallcaps(lower(title))]
   ]
-  v(0.4em, weak: true)
+  v(1em, weak: true)
 }
 
 // Major Roman-numeral chapter divider (I., II., III., ...). Centered,
@@ -81,7 +81,7 @@
     #v(0.3em)
     #text(size: body-size, tracking: 0.05em)[#smallcaps(lower(title))]
   ]
-  v(0.8em, weak: true)
+  v(1.4em, weak: true)
 }
 
 // Salutation rubric block — italic small caps, centered, set off from body.

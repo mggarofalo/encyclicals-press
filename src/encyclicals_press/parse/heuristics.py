@@ -42,9 +42,26 @@ FOOTNOTE_BODY_HREF_RE = re.compile(r"#?_ftn(\d+)$")
 FOOTNOTE_DEF_HREF_RE = re.compile(r"#?_ftnref(\d+)$")
 ROMAN_RE = re.compile(r"^[IVXLCDM]+\.?$", re.IGNORECASE)
 
-DATE_RE = re.compile(
-    r"on (\d{1,2}) (January|February|March|April|May|June|July|August|"
-    r"September|October|November|December)\b.*?(\d{4})",
+_MONTH_NAMES = (
+    "January|February|March|April|May|June|July|August|"
+    "September|October|November|December"
+)
+
+# Date-form variants seen across pontificates. Tried in order; the first
+# regex to match wins. Patterns are anchored only where they need to be —
+# Paul VI's datelines often omit "on" entirely ("Rome, April 29, 1965, in
+# the second year of Our Pontificate") and JP2's commonly use the
+# "Nth day of Month" form ("on the 25th day of July, ... 1968").
+DATE_RE_DAY_MONTH = re.compile(
+    rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?({_MONTH_NAMES})\b.*?(\d{{4}})",
+    re.IGNORECASE,
+)
+DATE_RE_MONTH_DAY = re.compile(
+    rf"\b({_MONTH_NAMES})\s+(\d{{1,2}})(?:st|nd|rd|th)?\b.*?(\d{{4}})",
+    re.IGNORECASE,
+)
+DATE_RE_ORDINAL = re.compile(
+    rf"\bthe\s+([a-z-]+?)(?:\s+day)?\s+of\s+({_MONTH_NAMES})\b.*?(\d{{4}})",
     re.IGNORECASE,
 )
 
@@ -52,6 +69,17 @@ _MONTHS = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
     "december": 12,
+}  # fmt: skip
+
+_ORDINAL_WORDS = {
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+    "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+    "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
+    "fifteenth": 15, "sixteenth": 16, "seventeenth": 17, "eighteenth": 18,
+    "nineteenth": 19, "twentieth": 20, "twenty-first": 21, "twenty-second": 22,
+    "twenty-third": 23, "twenty-fourth": 24, "twenty-fifth": 25,
+    "twenty-sixth": 26, "twenty-seventh": 27, "twenty-eighth": 28,
+    "twenty-ninth": 29, "thirtieth": 30, "thirty-first": 31,
 }  # fmt: skip
 
 SIGNATURE_MAX_LEN = 60
@@ -211,19 +239,40 @@ def extract_paragraph_number(text: str) -> tuple[int | None, str]:
 
 
 def parse_dateline_date(text: str) -> date | None:
-    """Pull the day/month/year out of a ``Given in X, on Day Month, ..., Year`` line."""
+    """Pull the day/month/year out of a dateline.
+
+    Handles several forms observed in the wild:
+
+    * ``on 14 September ... 1981``         — Day-Month numeric (Benedict, Francis)
+    * ``the 25th day of July ... 1968``    — ordinal-suffix numeric (Paul VI)
+    * ``May 18 ... 1986`` / ``June 24, 1967`` — Month-Day numeric (JP2, Paul VI)
+    * ``the fourteenth day of September ... 1981`` — word-form ordinal (JP2 early)
+    * ``the sixth day of August ... 1964`` — word-form ordinal mid-dateline (Paul VI)
+    """
     plain = strip_inline_markup(text)
-    m = DATE_RE.search(plain)
-    if m is None:
-        return None
-    return date(int(m.group(3)), _MONTHS[m.group(2).lower()], int(m.group(1)))
+    m = DATE_RE_ORDINAL.search(plain)
+    if m is not None:
+        day = _ORDINAL_WORDS.get(m.group(1).lower())
+        if day is not None:
+            return date(int(m.group(3)), _MONTHS[m.group(2).lower()], day)
+    m = DATE_RE_DAY_MONTH.search(plain)
+    if m is not None:
+        return date(int(m.group(3)), _MONTHS[m.group(2).lower()], int(m.group(1)))
+    m = DATE_RE_MONTH_DAY.search(plain)
+    if m is not None:
+        return date(int(m.group(3)), _MONTHS[m.group(1).lower()], int(m.group(2)))
+    return None
 
 
 # ---- title-casing utilities (used by parse_title_lines) ---------------
 
 _SMALL_WORDS = {
+    # English connectives and articles
     "and", "or", "of", "the", "to", "in", "for", "on", "a", "an",
     "at", "by", "as", "with", "from",
+    # Latin connectives and prepositions that appear in encyclical titles
+    # (Fides et Ratio, Ecclesia de Eucharistia, Dominum et Vivificantem)
+    "et", "de", "ad", "ex", "per", "pro", "sub", "cum",
 }  # fmt: skip
 
 
@@ -309,54 +358,77 @@ def find_title_paragraph(tree: LexborHTMLParser, body: LexborNode) -> LexborNode
     return None
 
 
+# Matches a pope name ending in a Roman numeral. Allows:
+#   - one or two given-name tokens ("JOHN PAUL II", "BENEDICT XVI", "LEO XIV")
+#   - an optional Latin "PP." papal abbreviation ("IOANNES PAULUS PP. II")
+_POPE_ROMAN_RE = re.compile(
+    r"^[A-Z][A-Za-z'’]*(?:\s+[A-Z][A-Za-z'’]*)?\s+(?:PP\.\s+)?[IVXLCDM]+$"
+)
+
+_TITLE_GUILLEMET_RE = re.compile(r"^[«‹]\s*(.+?)\s*[»›]$")
+
+
 def parse_title_lines(lines: list[str]) -> TitleBlock:
     """**Strategy.parse_title_lines** — extract title/subtitle/pope/salutation.
 
-    Lines come in stripped of ``&nbsp;`` and outer whitespace, already split
-    on ``<br>``. We skip the rubric labels (``ENCYCLICAL LETTER``, ``OF HIS
-    HOLINESS``), then take the first remaining line as the title, the next
-    as the pope's name (stripping any ``POPE `` prefix), and distinguish a
-    salutation block (``To the Bishops, Priests…``) from a multi-line
-    subtitle (``On Safeguarding the Human Person / In the Time of Artificial
-    Intelligence``) by the presence of a ``TO `` opener.
+    Rubric labels (``ENCYCLICAL LETTER``, ``OF HIS HOLINESS``, standalone
+    ``HOLY FATHER``/``SUPREME PONTIFF``) are skipped. A Roman-numeral-suffix
+    line (``JOHN PAUL II``, ``BENEDICT XVI``, ``LEO XIV``) is identified as
+    the pope wherever it appears — JP2-era pages put the pope first, later
+    pontificates put it after the title. Title lines wrapped in guillemets
+    ``«…»`` are unwrapped. When no Roman-numeral line is found, fall back to
+    the original heuristic: first non-rubric line is the title, second is
+    the pope (catches mononymic popes like ``FRANCIS``).
     """
-    title = ""
     pope = ""
-    trailing: list[str] = []
+    pope_idx = -1
+    cleaned_lines: list[str] = []
 
     for line in lines:
         text = strip_inline_markup(line)
         upper = text.upper()
         if upper == "ENCYCLICAL LETTER":
             continue
-        # The "by-whom" rubric line varies by pontificate: Benedict and Leo
-        # use "OF HIS HOLINESS" or "OF THE SUPREME PONTIFF"; Francis uses
-        # "OF THE HOLY FATHER". Match any of them so the pope's name lands
-        # in the right slot.
         if (
             upper.startswith("OF THE SUPREME PONTIFF")
             or upper.startswith("OF HIS HOLINESS")
             or upper.startswith("OF THE HOLY FATHER")
+            or upper in {"HOLY FATHER", "SUPREME PONTIFF"}
         ):
             continue
-        if not title:
-            title = title_case(text)
-            continue
-        if not pope:
-            cleaned = re.sub(r"(?i)^pope\s+", "", text)
+        # Unwrap a guillemet-wrapped title here so downstream slot-assignment
+        # sees the bare title text.
+        m = _TITLE_GUILLEMET_RE.match(text)
+        if m is not None:
+            text = m.group(1)
+        cleaned = re.sub(r"(?i)^pope\s+", "", text)
+        if pope_idx == -1 and _POPE_ROMAN_RE.match(cleaned):
             pope = title_case(cleaned)
+            pope_idx = len(cleaned_lines)
+            cleaned_lines.append("")  # placeholder so other lines keep their order
             continue
-        trailing.append(text)
+        cleaned_lines.append(text)
 
-    if not trailing:
+    other = [line for line in cleaned_lines if line]
+    title = ""
+    if pope_idx == -1 and other:
+        # No Roman-numeral pope detected — fall back to the original order:
+        # first non-rubric is title, second is pope.
+        title = title_case(other.pop(0))
+        if other:
+            pope = title_case(re.sub(r"(?i)^pope\s+", "", other.pop(0)))
+    elif other:
+        title = title_case(other.pop(0))
+
+    if not other:
         return TitleBlock(title=title, subtitle=None, pope=pope, salutation="")
 
-    has_salutation = any(line.upper().startswith("TO ") for line in trailing)
+    has_salutation = any(line.upper().startswith("TO ") for line in other)
     if has_salutation:
-        subtitle = title_case(trailing.pop())
-        salutation = ", ".join(title_case(s) for s in trailing)
+        subtitle = title_case(other.pop())
+        salutation = ", ".join(title_case(s) for s in other)
     else:
-        subtitle = title_case(" ".join(trailing))
+        subtitle = title_case(" ".join(other))
         salutation = ""
 
     return TitleBlock(title=title, subtitle=subtitle, pope=pope, salutation=salutation)

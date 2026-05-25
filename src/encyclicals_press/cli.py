@@ -12,8 +12,10 @@ from .fetch import fetch_encyclical, fixture_path
 from .md_writer import write_markdown
 from .normalize import normalize
 from .parse import parse_with_attempts
+from .parse import _apply_overrides
 from .parse.validate import ParseWarning
 from .render import render
+from .render.corpus_reader import read_corpus
 
 
 def _project_root() -> Path:
@@ -94,7 +96,7 @@ def ingest(slug: str, force: bool) -> None:
         )
     if winning.warnings:
         _report_warnings(winning.warnings, winning.strategy_name)
-    encyclical = normalize(winning.encyclical)
+    encyclical = normalize(_apply_overrides(winning.encyclical, slug))
     target = _corpus_path(encyclical.pope, slug)
     if target.exists() and not force:
         raise click.ClickException(f"refusing to overwrite {target} (pass --force to allow)")
@@ -125,10 +127,26 @@ def build(slug: str | None, all_: bool) -> None:
         targets = matches
 
     for corpus_path in targets:
-        slug_name = corpus_path.stem
-        pdf_path = output_dir / f"{slug_name}.pdf"
+        pdf_path = output_dir / f"{_output_basename(corpus_path)}.pdf"
         click.echo(f"rendering {corpus_path.relative_to(root)} -> {pdf_path.relative_to(root)}")
         render(corpus_path, pdf_path)
+
+
+def _output_basename(corpus_path: Path) -> str:
+    """Build the output filename stem ``YYYY-MM-DD-pope-slug-title-slug``.
+
+    Date first → chronological sort. Pope slug second → grouping. Slug last →
+    legible identifier. Falls back to the corpus stem if the frontmatter is
+    missing pieces (it never should be — schema enforces them).
+    """
+    meta = read_corpus(corpus_path).meta
+    slug = meta.get("slug") or corpus_path.stem
+    pope = meta.get("pope") or ""
+    promulgated = meta.get("promulgated")
+    date_part = promulgated.isoformat() if hasattr(promulgated, "isoformat") else str(promulgated or "")
+    pope_slug = re.sub(r"[^a-z0-9]+", "-", pope.lower()).strip("-")
+    parts = [p for p in (date_part, pope_slug, slug) if p]
+    return "-".join(parts) if parts else corpus_path.stem
 
 
 if __name__ == "__main__":  # pragma: no cover
