@@ -19,6 +19,4 @@ def url_for(slug: str) -> str:
     try:
         return URL_MAP[slug]
     except KeyError as exc:
-        raise KeyError(
-            f"unknown encyclical slug {slug!r}; known slugs: {sorted(URL_MAP)}"
-        ) from exc
+        raise KeyError(f"unknown encyclical slug {slug!r}; known slugs: {sorted(URL_MAP)}") from exc

@@ -20,7 +20,7 @@ USER_AGENT = "encyclicals-press/0.1 (+https://github.com/mggarofalo/encyclicals-
 REQUEST_INTERVAL_SECONDS = 1.0
 TIMEOUT_SECONDS = 30.0
 
-_last_request_at: float = 0.0
+_state: dict[str, float] = {"last_request_at": 0.0}
 
 
 def _project_root() -> Path:
@@ -48,12 +48,11 @@ def _robots_allows(url: str) -> bool:
 
 
 def _throttle() -> None:
-    global _last_request_at
     now = time.monotonic()
-    elapsed = now - _last_request_at
+    elapsed = now - _state["last_request_at"]
     if elapsed < REQUEST_INTERVAL_SECONDS:
         time.sleep(REQUEST_INTERVAL_SECONDS - elapsed)
-    _last_request_at = time.monotonic()
+    _state["last_request_at"] = time.monotonic()
 
 
 def fetch_encyclical(slug: str) -> Path:

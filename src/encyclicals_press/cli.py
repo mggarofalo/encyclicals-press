@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 
 from . import __version__
+from .fetch import fetch_encyclical
 
 
 @click.group()
@@ -17,8 +18,6 @@ def main() -> None:
 @click.argument("slug")
 def fetch(slug: str) -> None:
     """Fetch <slug> from vatican.va into tests/fixtures/<slug>.html."""
-    from .fetch import fetch_encyclical
-
     path = fetch_encyclical(slug)
     click.echo(f"wrote {path}")
 
