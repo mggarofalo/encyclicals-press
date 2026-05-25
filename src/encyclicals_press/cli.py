@@ -2,10 +2,29 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import click
 
 from . import __version__
-from .fetch import fetch_encyclical
+from .fetch import fetch_encyclical, fixture_path
+from .md_writer import write_markdown
+from .normalize import normalize
+from .parse import parse as parse_html
+
+
+def _project_root() -> Path:
+    # src/encyclicals_press/cli.py -> project root is two parents above src/.
+    return Path(__file__).resolve().parents[2]
+
+
+def _pope_slug(pope: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", pope.lower()).strip("-")
+
+
+def _corpus_path(pope: str, slug: str) -> Path:
+    return _project_root() / "corpus" / _pope_slug(pope) / f"{slug}.md"
 
 
 @click.group()
@@ -27,7 +46,17 @@ def fetch(slug: str) -> None:
 @click.option("--force", is_flag=True, help="Overwrite an existing corpus file.")
 def ingest(slug: str, force: bool) -> None:
     """Parse the cached HTML for <slug> into the Markdown corpus."""
-    raise click.ClickException("ingest is not implemented yet (Stage 4)")
+    fixture = fixture_path(slug)
+    if not fixture.exists():
+        raise click.ClickException(
+            f"fixture {fixture} not found; run `encyclicals fetch {slug}` first"
+        )
+    encyclical = normalize(parse_html(fixture.read_text(encoding="utf-8"), slug=slug))
+    target = _corpus_path(encyclical.pope, slug)
+    if target.exists() and not force:
+        raise click.ClickException(f"refusing to overwrite {target} (pass --force to allow)")
+    write_markdown(encyclical, target)
+    click.echo(f"wrote {target}")
 
 
 @main.command()

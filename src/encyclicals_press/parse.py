@@ -357,6 +357,10 @@ def _emit_wrapped(inner: list[str], marker: str, out: list[str]) -> None:
 
 _WHITESPACE_RE = re.compile(r"[ \t\xa0]+")
 _HYPHEN_BREAK_RE = re.compile(r"(\w)-\s+(\w)")
+# Vatican.va wraps body footnote anchors in literal "[...]" — e.g.
+# ``Saint Thomas Aquinas[<a href="#_ftn4">4</a>],``. After collapsing the
+# anchor to [^N], the surrounding brackets remain. Tighten them.
+_BRACKETED_FOOTNOTE_RE = re.compile(r"\[\s*\[\^(\d+)\]\s*\]")
 
 
 def _tidy(text: str) -> str:
@@ -366,6 +370,7 @@ def _tidy(text: str) -> str:
     # The vatican.va prints carry print-edition hyphenated word breaks
     # like "Prot- estant" inside body text. Re-join them.
     text = _HYPHEN_BREAK_RE.sub(r"\1\2", text)
+    text = _BRACKETED_FOOTNOTE_RE.sub(r"[^\1]", text)
     # Collapse "** **" -> " " when bold/italic spans abutted whitespace.
     text = re.sub(r"\*\*\s+\*\*", " ", text)
     text = re.sub(r"\*\s+\*", " ", text)
