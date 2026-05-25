@@ -10,8 +10,7 @@ from . import __version__
 from .fetch import fetch_encyclical, fixture_path, input_path
 from .md_writer import write_markdown
 from .normalize import normalize
-from .parse import parse_with_attempts
-from .parse import _apply_overrides
+from .parse import _apply_overrides, parse_with_attempts
 from .parse.validate import ParseWarning
 from .render import render
 from .render.corpus_reader import read_corpus
