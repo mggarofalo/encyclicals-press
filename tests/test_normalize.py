@@ -50,7 +50,9 @@ def test_footnote_marker_loses_leading_space() -> None:
 
 def test_normalize_applies_to_all_fields() -> None:
     enc = Encyclical(
-        slug="test",
+        title_slug="test",
+        author_slug="pope-test",
+        publication_date_slug="2025-01-01",
         title="Test",
         subtitle=None,
         pope="Pope Test",
@@ -77,7 +79,9 @@ def test_normalize_applies_to_all_fields() -> None:
 
 def test_normalize_does_not_mutate_input() -> None:
     enc = Encyclical(
-        slug="x",
+        title_slug="x",
+        author_slug="x",
+        publication_date_slug="2025-01-01",
         title="X",
         subtitle=None,
         pope="X",

@@ -19,7 +19,9 @@ def spe_salvi() -> Encyclical:
 
 
 def test_metadata(spe_salvi: Encyclical) -> None:
-    assert spe_salvi.slug == "spe-salvi"
+    assert spe_salvi.title_slug == "spe-salvi"
+    assert spe_salvi.author_slug == "benedict-xvi"
+    assert spe_salvi.publication_date_slug == "2007-11-30"
     assert spe_salvi.title == "Spe Salvi"
     assert spe_salvi.subtitle == "On Christian Hope"
     assert spe_salvi.pope == "Benedict XVI"

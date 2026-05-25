@@ -237,6 +237,15 @@ _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)\s]+\)")
 _MD_FOOTNOTE_RE = re.compile(r"\[\^\d+\]")
 
 
+def slugify(s: str) -> str:
+    """Reduce ``s`` to a kebab-case slug: lowercase, alphanumerics joined by ``-``.
+
+    Used to derive ``author_slug`` from a display pope name (``John Paul II`` →
+    ``john-paul-ii``) and as a fallback for any other slug-like field.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+
+
 def clean_heading_text(s: str) -> str:
     """Reduce a heading run to plain text.
 

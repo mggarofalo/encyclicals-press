@@ -58,7 +58,9 @@ def render_markdown(enc: Encyclical) -> str:
 
 def _render_frontmatter(enc: Encyclical) -> str:
     data = {
-        "slug": enc.slug,
+        "title_slug": enc.title_slug,
+        "author_slug": enc.author_slug,
+        "publication_date_slug": enc.publication_date_slug,
         "title": enc.title,
         "subtitle": enc.subtitle,
         "pope": enc.pope,

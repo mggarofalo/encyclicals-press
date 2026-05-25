@@ -24,7 +24,9 @@ def _make(
     if footnotes is None:
         footnotes = []
     return Encyclical(
-        slug="t",
+        title_slug="t",
+        author_slug="t",
+        publication_date_slug="2024-01-01",
         title=title,
         subtitle=None,
         pope=pope,

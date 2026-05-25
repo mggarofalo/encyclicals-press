@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import click
@@ -23,12 +22,8 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _pope_slug(pope: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", pope.lower()).strip("-")
-
-
-def _corpus_path(pope: str, slug: str) -> Path:
-    return _project_root() / "corpus" / _pope_slug(pope) / f"{slug}.md"
+def _corpus_path(author_slug: str, title_slug: str) -> Path:
+    return _project_root() / "corpus" / author_slug / f"{title_slug}.md"
 
 
 @click.group()
@@ -107,7 +102,7 @@ def ingest(slug: str, force: bool) -> None:
     if winning.warnings:
         _report_warnings(winning.warnings, winning.strategy_name)
     encyclical = normalize(_apply_overrides(winning.encyclical, slug))
-    target = _corpus_path(encyclical.pope, slug)
+    target = _corpus_path(encyclical.author_slug, encyclical.title_slug)
     if target.exists() and not force:
         raise click.ClickException(f"refusing to overwrite {target} (pass --force to allow)")
     write_markdown(encyclical, target)
@@ -143,19 +138,20 @@ def build(slug: str | None, all_: bool) -> None:
 
 
 def _output_basename(corpus_path: Path) -> str:
-    """Build the output filename stem ``YYYY-MM-DD-pope-slug-title-slug``.
+    """Build the output filename stem from the corpus frontmatter:
+    ``<publication_date_slug>-<author_slug>-<title_slug>``.
 
-    Date first → chronological sort. Pope slug second → grouping. Slug last →
-    legible identifier. Falls back to the corpus stem if the frontmatter is
-    missing pieces (it never should be — schema enforces them).
+    Date first → chronological sort. Author second → grouping by pope.
+    Title last → legible identifier. Falls back to the corpus stem if
+    any slug is missing.
     """
     meta = read_corpus(corpus_path).meta
-    slug = meta.get("slug") or corpus_path.stem
-    pope = meta.get("pope") or ""
-    promulgated = meta.get("promulgated")
-    date_part = promulgated.isoformat() if hasattr(promulgated, "isoformat") else str(promulgated or "")
-    pope_slug = re.sub(r"[^a-z0-9]+", "-", pope.lower()).strip("-")
-    parts = [p for p in (date_part, pope_slug, slug) if p]
+    parts = [
+        meta.get("publication_date_slug") or "",
+        meta.get("author_slug") or "",
+        meta.get("title_slug") or corpus_path.stem,
+    ]
+    parts = [p for p in parts if p]
     return "-".join(parts) if parts else corpus_path.stem
 
 

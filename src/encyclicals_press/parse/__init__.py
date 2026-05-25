@@ -61,6 +61,7 @@ from .heuristics import (
     is_empty,
     node_to_markdown,
     parse_dateline_date,
+    slugify,
     split_on_breaks,
     title_case,
 )
@@ -234,7 +235,13 @@ def _apply_overrides(encyclical: Encyclical, slug: str) -> Encyclical:
     cfg = config_for(slug)
     if cfg is None or not cfg.overrides:
         return encyclical
-    return encyclical.model_copy(update=cfg.overrides)
+    patched = encyclical.model_copy(update=cfg.overrides)
+    # Overrides commonly patch ``pope`` for documents whose title block the
+    # parser can't decode. Re-derive author_slug from the patched value so
+    # the corpus filename matches the corrected name.
+    if "pope" in cfg.overrides and "author_slug" not in cfg.overrides:
+        patched = patched.model_copy(update={"author_slug": slugify(patched.pope)})
+    return patched
 
 
 # Pre-modern encyclicals sometimes emit chapter dividers inline as a
@@ -307,7 +314,9 @@ def _execute(html_source: str, slug: str, source_url: str | None, strat: Strateg
         paragraphs.append(Paragraph(number=None, section=None, text=text))
 
     return Encyclical(
-        slug=slug,
+        title_slug=slug,
+        author_slug=slugify(title_block.pope) if title_block.pope else "",
+        publication_date_slug=promulgated.isoformat(),
         title=title_block.title,
         subtitle=title_block.subtitle,
         pope=title_block.pope,

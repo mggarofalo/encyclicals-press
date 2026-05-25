@@ -46,7 +46,20 @@ class Footnote(BaseModel):
 class Encyclical(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    slug: str
+    title_slug: str
+    """Kebab-case identifier derived from the title — e.g. ``redemptor-hominis``.
+    Used as the corpus filename and as the last component of output PDF names."""
+
+    author_slug: str
+    """Kebab-case slug for the promulgating pope — e.g. ``john-paul-ii``.
+    Used as the corpus subdirectory and as the middle component of output PDF
+    names. Derived from :attr:`pope` at parse time; hand-editable thereafter."""
+
+    publication_date_slug: str
+    """ISO date slug for the promulgation — e.g. ``1979-03-04``. Stored
+    explicitly so output filenames are self-describing without re-deriving
+    from :attr:`promulgated`."""
+
     title: str
     subtitle: str | None
     pope: str
