@@ -12,6 +12,7 @@ from .fetch import fetch_encyclical, fixture_path
 from .md_writer import write_markdown
 from .normalize import normalize
 from .parse import parse as parse_html
+from .render import render
 
 
 def _project_root() -> Path:
@@ -64,7 +65,28 @@ def ingest(slug: str, force: bool) -> None:
 @click.option("--all", "all_", is_flag=True, help="Render every corpus document.")
 def build(slug: str | None, all_: bool) -> None:
     """Render <slug> (or --all corpus files) to output/<slug>.pdf."""
-    raise click.ClickException("build is not implemented yet (Stage 5)")
+    root = _project_root()
+    output_dir = root / "output"
+    targets: list[Path] = []
+    if all_:
+        targets = sorted(root.glob("corpus/*/*.md"))
+        if not targets:
+            raise click.ClickException("no corpus documents found")
+    else:
+        if slug is None:
+            raise click.ClickException("specify a <slug> or pass --all")
+        matches = list(root.glob(f"corpus/*/{slug}.md"))
+        if not matches:
+            raise click.ClickException(
+                f"no corpus document found for slug {slug!r}; run `encyclicals ingest {slug}` first"
+            )
+        targets = matches
+
+    for corpus_path in targets:
+        slug_name = corpus_path.stem
+        pdf_path = output_dir / f"{slug_name}.pdf"
+        click.echo(f"rendering {corpus_path.relative_to(root)} -> {pdf_path.relative_to(root)}")
+        render(corpus_path, pdf_path)
 
 
 if __name__ == "__main__":  # pragma: no cover

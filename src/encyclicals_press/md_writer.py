@@ -30,7 +30,7 @@ from .schema import Encyclical, Paragraph
 
 def write_markdown(enc: Encyclical, out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_markdown(enc), encoding="utf-8")
+    out_path.write_text(render_markdown(enc), encoding="utf-8", newline="\n")
 
 
 def render_markdown(enc: Encyclical) -> str:
