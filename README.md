@@ -28,17 +28,17 @@ The slug is the project's stable identifier (e.g. `spe-salvi`, `caritas-in-verit
 
 ```
 vatican.va HTML
-      │  fetch.py    (httpx, 1 req/sec, polite)
+      │  fetch.py        (httpx, 1 req/sec, polite)
       ▼
 tests/fixtures/<slug>.html
-      │  parse.py    (selectolax, tolerant heuristics)
+      │  parse/          (pluggable heuristics + validation + self-healing)
       ▼
 Encyclical (pydantic model — paragraphs, footnotes, metadata)
-      │  normalize.py (smart quotes, dashes, NBSP cleanup)
-      │  md_writer.py (YAML frontmatter + fenced-div Markdown)
+      │  normalize.py    (smart quotes, dashes, NBSP cleanup)
+      │  md_writer.py    (YAML frontmatter + fenced-div Markdown)
       ▼
 corpus/<pope>/<slug>.md   ← the project's actual product, hand-editable
-      │  render.py (custom md→Typst, no Pandoc dep)
+      │  render.py       (custom md→Typst, no Pandoc dep)
       ▼
 output/<slug>.pdf
 ```
@@ -58,18 +58,48 @@ The corpus directory is the long-lived artifact. Re-running `fetch` and `ingest`
 
 Fonts are vendored under `templates/fonts/` so CI builds are reproducible.
 
+## Parser flexibility
+
+Vatican.va's HTML drifts across pontificates. The parser is designed for it: every decision point — where the title lives, what counts as a heading, how to find footnote definitions, where the dateline sits — is a named, single-responsibility function on a `Strategy` bundle. The default strategy handles every document the project currently ships; novel layouts hit a permissive fallback before the parser gives up.
+
+Three knobs, in increasing power:
+
+* **Override one field on a strategy.** `DEFAULT_STRATEGY.replace(find_title=my_finder)` swaps the title-paragraph locator without touching anything else.
+* **Register a named strategy** and point a document at it from the URL_MAP:
+  ```python
+  URL_MAP["my-doc"] = DocConfig(url="...", strategy="my-strategy")
+  ```
+* **Field-level overrides** for individual documents (no code change):
+  ```python
+  URL_MAP["weird-doc"] = DocConfig(
+      url="...",
+      overrides={"incipit": "Magnifica humanitas"},
+  )
+  ```
+
+After parsing, a validation pass checks for missing fields, paragraph-number gaps, and footnote ref/def mismatches. Errors trigger fallback to the next strategy; warnings surface to the user without blocking the ingest.
+
 ## Contributing a new encyclical
 
 1. Find the canonical English-language vatican.va URL for the document.
-2. Add it to `URL_MAP` in `src/encyclicals_press/_url_map.py`.
-3. `uv run encyclicals fetch <slug>` to cache the HTML.
-4. Inspect `tests/fixtures/<slug>.html` — vatican.va's markup varies by pontificate.
-5. `uv run encyclicals ingest <slug>` to produce `corpus/<pope>/<slug>.md`. If the parser stumbles on something unusual, hand-edit the corpus Markdown and the changes persist (re-running `ingest` won't overwrite without `--force`).
+2. Add it to `URL_MAP` in `src/encyclicals_press/_url_map.py` (plain URL string, or `DocConfig(...)` for a strategy/overrides).
+3. `uv run encyclicals fetch <slug>` — caches the HTML to `tests/fixtures/`.
+4. `uv run encyclicals ingest <slug>` — produces `corpus/<pope>/<slug>.md`. Validation warnings, if any, print to stderr.
+5. If the parser stumbles, either:
+   * write a custom strategy (see `parse/strategies.py`) and register it,
+   * patch the offending field via `DocConfig.overrides`, or
+   * hand-edit the corpus Markdown — `ingest` won't overwrite without `--force`.
 6. `uv run encyclicals build <slug>` and inspect the PDF.
-7. PR with the new corpus file, fixture, and any parser tweaks.
+7. PR with the new corpus file, the cached fixture, and any heuristic tweaks.
 
 ## Status
 
-v1 ships Benedict XVI's *Spe Salvi* end-to-end as the reference document. Other encyclicals are out of scope for v1 — each new document is a few hours of parser-tuning and a corpus file.
+The repository currently ships eight encyclicals across three pontificates, all parsing cleanly without per-document overrides:
+
+* **Benedict XVI:** *Deus Caritas Est* (2005), *Spe Salvi* (2007), *Caritas in Veritate* (2009)
+* **Francis:** *Lumen Fidei* (2013), *Laudato Si'* (2015), *Fratelli Tutti* (2020), *Dilexit Nos* (2024)
+* **Leo XIV:** *Magnifica Humanitas* (2026)
+
+PDFs build via `uv run encyclicals build --all`; CI uploads them as artifacts.
 
 See [COPYRIGHT.md](COPYRIGHT.md) for licensing.

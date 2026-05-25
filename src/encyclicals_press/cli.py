@@ -11,7 +11,8 @@ from . import __version__
 from .fetch import fetch_encyclical, fixture_path
 from .md_writer import write_markdown
 from .normalize import normalize
-from .parse import parse as parse_html
+from .parse import parse_with_attempts
+from .parse.validate import ParseWarning
 from .render import render
 
 
@@ -42,6 +43,21 @@ def fetch(slug: str) -> None:
     click.echo(f"wrote {path}")
 
 
+_SEVERITY_COLORS = {"error": "red", "warn": "yellow", "info": "cyan"}
+
+
+def _report_warnings(warnings: list[ParseWarning], strategy_name: str) -> None:
+    """Print parse warnings as colored, structured lines on stderr."""
+    if not warnings:
+        return
+    for w in warnings:
+        color = _SEVERITY_COLORS.get(w.severity, "white")
+        prefix = click.style(f"  {w.severity:>5}", fg=color, bold=True)
+        code = click.style(w.code, dim=True)
+        click.echo(f"{prefix} {code}  {w.message}", err=True)
+    click.echo(click.style(f"  (strategy: {strategy_name})", dim=True, italic=True), err=True)
+
+
 @main.command()
 @click.argument("slug")
 @click.option("--force", is_flag=True, help="Overwrite an existing corpus file.")
@@ -52,7 +68,23 @@ def ingest(slug: str, force: bool) -> None:
         raise click.ClickException(
             f"fixture {fixture} not found; run `encyclicals fetch {slug}` first"
         )
-    encyclical = normalize(parse_html(fixture.read_text(encoding="utf-8"), slug=slug))
+    attempts = parse_with_attempts(fixture.read_text(encoding="utf-8"), slug=slug)
+    winning = next(
+        (
+            a
+            for a in attempts
+            if a.encyclical is not None and all(w.severity != "error" for w in a.warnings)
+        ),
+        attempts[-1],
+    )
+    if winning.encyclical is None:
+        raise click.ClickException(
+            f"all strategies failed for {slug!r}: "
+            + "; ".join(f"{a.strategy_name}: {a.warnings[0].message}" for a in attempts)
+        )
+    if winning.warnings:
+        _report_warnings(winning.warnings, winning.strategy_name)
+    encyclical = normalize(winning.encyclical)
     target = _corpus_path(encyclical.pope, slug)
     if target.exists() and not force:
         raise click.ClickException(f"refusing to overwrite {target} (pass --force to allow)")

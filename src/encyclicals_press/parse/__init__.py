@@ -373,7 +373,7 @@ _FOOTNOTE_DEF_BARE_HEAD_RE = _re.compile(r"(\d+)\]")
 _FTN_ANCHOR_NAME_RE = _re.compile(r"^_ftn(\d+)$")
 
 
-def _parse_footnotes(footnote_ps: list["LexborNode"]) -> list[Footnote]:  # noqa: PLR0912
+def _parse_footnotes(footnote_ps: list[LexborNode]) -> list[Footnote]:  # noqa: PLR0912
     """Recover footnote definitions from the paragraphs the strategy gave us.
 
     Resilient to two vatican.va quirks observed in the wild:
@@ -410,7 +410,7 @@ def _parse_footnotes(footnote_ps: list["LexborNode"]) -> list[Footnote]:  # noqa
     return footnotes
 
 
-def _collect_def_anchor_numbers(p: "LexborNode") -> list[int]:
+def _collect_def_anchor_numbers(p: LexborNode) -> list[int]:
     numbers: list[int] = []
     for anchor in p.css("a"):
         name = anchor.attributes.get("name") or ""
@@ -470,7 +470,7 @@ def _extract_incipit(paragraphs: list[Paragraph], title: str) -> str:
     open paragraph 1 in many encyclicals. When the italic doesn't qualify,
     fall back to the title itself.
     """
-    title_first = title.split()[0].lower() if title.split() else ""
+    title_first = title.split(maxsplit=1)[0].lower() if title.split() else ""
     for p in paragraphs:
         if p.number != 1:
             continue
