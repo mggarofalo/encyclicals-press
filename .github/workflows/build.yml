@@ -37,6 +37,16 @@ jobs:
       - name: Test
         run: uv run pytest
 
+      - name: Ingest committed fixtures into corpus
+        # corpus/ is gitignored (derived from input/). CI has no input/
+        # either, so seed corpus/ from the lorem-ipsum'd HTML under
+        # tests/fixtures/ — the ingest fallback path.
+        run: |
+          for fixture in tests/fixtures/*.html; do
+            slug="$(basename "$fixture" .html)"
+            uv run encyclicals ingest "$slug"
+          done
+
       - name: Render all encyclicals
         run: uv run encyclicals build --all
 
